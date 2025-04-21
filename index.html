@@ -41,14 +41,40 @@
                 <button id="record-btn">Enregistrer</button>
                 <button id="stop-btn" disabled>Arrêter</button>
                 <div id="audio-player-container"></div>
+                <div id="realtime-display">
+                    <canvas id="pitch-canvas" width="400" height="200"></canvas>
+                </div>
                 <div id="analysis-result">
                     <h3>Analyse</h3>
                     <div id="pitch-analysis"></div>
                 </div>
             </div>
         </div>
+        
+        <div class="instructions-panel">
+            <h2>Instructions</h2>
+            <ol>
+                <li>Appuyez sur <strong>Générer nouvelle combinaison</strong> pour obtenir une voyelle et une note aléatoires</li>
+                <li>Écoutez la note de référence en appuyant sur <strong>Démarrer exercice</strong></li>
+                <li>Prononcez la voyelle affichée à la hauteur de la note pendant 10 secondes</li>
+                <li>Appuyez sur <strong>Enregistrer</strong> pour capturer votre voix</li>
+                <li>Appuyez sur <strong>Arrêter</strong> pour terminer l'enregistrement</li>
+                <li>Consultez l'analyse pour voir si votre note correspond à la note cible</li>
+            </ol>
+            
+            <div class="tips">
+                <h3>Conseils</h3>
+                <ul>
+                    <li>Tenez la voyelle de façon stable sans varier la hauteur</li>
+                    <li>Essayez de maintenir une posture droite et détendue</li>
+                    <li>Respirez profondément avant de commencer</li>
+                    <li>Pratiquez régulièrement pour améliorer votre précision</li>
+                </ul>
+            </div>
+        </div>
     </div>
     
     <script src="js-file.js"></script>
+
 </body>
 </html>
