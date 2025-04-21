@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Exercice d'Orthophonie</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Exercice d'Orthophonie</h1>
+        
+        <div class="exercise-panel">
+            <div class="result-display">
+                <div class="vowel-display">
+                    <h2>Voyelle:</h2>
+                    <div id="selected-vowel" class="result">o</div>
+                </div>
+                
+                <div class="note-display">
+                    <h2>Note:</h2>
+                    <div id="selected-note" class="result">mi (330 Hz)</div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="generate-btn">Générer nouvelle combinaison</button>
+                <button id="start-btn">Démarrer exercice (10s)</button>
+                <div id="timer" class="timer">10</div>
+            </div>
+            
+            <div class="music-notation">
+                <h2>Représentation musicale</h2>
+                <div id="score-container">
+                    <!-- La notation musicale sera générée ici -->
+                </div>
+            </div>
+            
+            <div class="recording-section">
+                <h2>Enregistrement</h2>
+                <button id="record-btn">Enregistrer</button>
+                <button id="stop-btn" disabled>Arrêter</button>
+                <div id="audio-player-container"></div>
+                <div id="analysis-result">
+                    <h3>Analyse</h3>
+                    <div id="pitch-analysis"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="scripts/main.js"></script>
+</body>
+</html>
