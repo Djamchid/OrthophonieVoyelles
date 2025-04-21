@@ -951,3 +951,17 @@ function refineFrequency(yinBuffer, tau) {
     const refinedTau = tau - b / (2 * a);
     return refinedTau;
 }
+// Ajoutez ce code à la fin de votre fichier main.js
+window.addEventListener('load', function() {
+    console.log("Vérification des boutons...");
+    const recordBtnAlt = document.getElementById('record-btn');
+    if (recordBtnAlt) {
+        console.log("Bouton d'enregistrement trouvé, ajout d'un gestionnaire alternatif");
+        recordBtnAlt.onclick = function() {
+            console.log("Bouton d'enregistrement cliqué");
+            startRecording();
+        };
+    } else {
+        console.error("Bouton d'enregistrement non trouvé!");
+    }
+});
