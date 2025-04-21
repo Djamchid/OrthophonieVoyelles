@@ -697,21 +697,46 @@ function detectPitchFromBuffer(buffer, sampleRate) {
 }
 
 // Dessiner la visualisation du pitch
+// Visualiser la hauteur en temps réel avec des améliorations
 function drawPitchVisualization(detectedFrequency) {
     // Effacer le canvas
     pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
     
-    // Si aucune fréquence n'est détectée, dessiner un canvas vide
+    // Dessiner l'arrière-plan avec un dégradé
+    const gradient = pitchCanvasCtx.createLinearGradient(0, 0, 0, pitchCanvas.height);
+    gradient.addColorStop(0, '#f8f9fa');
+    gradient.addColorStop(1, '#e9ecef');
+    pitchCanvasCtx.fillStyle = gradient;
+    pitchCanvasCtx.fillRect(0, 0, pitchCanvas.width, pitchCanvas.height);
+    
+    // Si aucune fréquence n'est détectée, dessiner un canvas avec indication
     if (!detectedFrequency || detectedFrequency === 0) {
-        drawEmptyPitchCanvas();
+        pitchCanvasCtx.fillStyle = '#6c757d';
+        pitchCanvasCtx.font = '16px sans-serif';
+        pitchCanvasCtx.textAlign = 'center';
+        pitchCanvasCtx.fillText("Aucun son détecté", pitchCanvas.width / 2, pitchCanvas.height / 2);
+        
+        // Ajouter une animation pour indiquer l'attente
+        const radius = 30;
+        const centerX = pitchCanvas.width / 2;
+        const centerY = pitchCanvas.height / 2 + 30;
+        const angle = (Date.now() / 500) % (Math.PI * 2);
+        
+        pitchCanvasCtx.strokeStyle = '#4a6da7';
+        pitchCanvasCtx.lineWidth = 3;
+        pitchCanvasCtx.beginPath();
+        pitchCanvasCtx.arc(centerX, centerY, radius, 0, angle);
+        pitchCanvasCtx.stroke();
+        
+        // Demander au navigateur d'appeler cette fonction à nouveau au prochain rafraîchissement
+        requestAnimationFrame(() => drawPitchVisualization(0));
         return;
     }
     
     // Fréquence cible
     const targetFrequency = currentNote.frequency;
     
-    // Convertir les fréquences en position Y sur le canvas
-    // Utiliser une échelle logarithmique pour les fréquences
+    // Variables pour la visualisation
     const minFreq = 80;
     const maxFreq = 1000;
     const canvasHeight = pitchCanvas.height;
@@ -730,42 +755,66 @@ function drawPitchVisualization(detectedFrequency) {
         return canvasHeight - (canvasHeight * (logFreq - logMinFreq) / (logMaxFreq - logMinFreq));
     };
     
-    // Dessiner l'arrière-plan
-    pitchCanvasCtx.fillStyle = '#f5f5f5';
-    pitchCanvasCtx.fillRect(0, 0, canvasWidth, canvasHeight);
-    
-    // Dessiner des lignes horizontales pour les notes de référence
-    pitchCanvasCtx.strokeStyle = '#ddd';
+    // Dessiner des lignes horizontales pour les notes de référence avec un style amélioré
+    pitchCanvasCtx.strokeStyle = '#dee2e6';
     pitchCanvasCtx.lineWidth = 1;
     
     for (const note of notes) {
         const y = freqToY(note.frequency);
         
-        pitchCanvasCtx.beginPath();
-        pitchCanvasCtx.moveTo(0, y);
-        pitchCanvasCtx.lineTo(canvasWidth, y);
-        pitchCanvasCtx.stroke();
-        
-        // Ajouter le nom de la note
-        if (note.frequency >= minFreq && note.frequency <= maxFreq) {
-            pitchCanvasCtx.fillStyle = '#999';
-            pitchCanvasCtx.font = '10px sans-serif';
-            pitchCanvasCtx.fillText(note.name, 5, y - 3);
+        if (y >= 0 && y <= canvasHeight) {
+            pitchCanvasCtx.beginPath();
+            
+            // Dessiner une ligne pointillée pour les notes
+            pitchCanvasCtx.setLineDash([5, 3]);
+            pitchCanvasCtx.moveTo(0, y);
+            pitchCanvasCtx.lineTo(canvasWidth, y);
+            pitchCanvasCtx.stroke();
+            pitchCanvasCtx.setLineDash([]);
+            
+            // Ajouter le nom de la note avec un style amélioré
+            if (note.frequency >= minFreq && note.frequency <= maxFreq) {
+                pitchCanvasCtx.fillStyle = '#6c757d';
+                pitchCanvasCtx.font = '11px sans-serif';
+                
+                // Ajouter un fond pour une meilleure lisibilité
+                const textWidth = pitchCanvasCtx.measureText(note.name).width;
+                pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+                pitchCanvasCtx.fillRect(3, y - 12, textWidth + 6, 15);
+                
+                pitchCanvasCtx.fillStyle = '#495057';
+                pitchCanvasCtx.textAlign = 'left';
+                pitchCanvasCtx.fillText(note.name, 5, y - 2);
+            }
         }
     }
     
-    // Dessiner la ligne de fréquence cible
+    // Dessiner la ligne de fréquence cible avec plus d'importance
     const targetY = freqToY(targetFrequency);
     
-    pitchCanvasCtx.strokeStyle = '#4a6da7';
-    pitchCanvasCtx.lineWidth = 2;
-    
+    // Dessiner d'abord une ligne plus large
+    pitchCanvasCtx.strokeStyle = 'rgba(74, 109, 167, 0.3)';
+    pitchCanvasCtx.lineWidth = 8;
     pitchCanvasCtx.beginPath();
     pitchCanvasCtx.moveTo(0, targetY);
     pitchCanvasCtx.lineTo(canvasWidth, targetY);
     pitchCanvasCtx.stroke();
     
-    // Ajouter une zone de tolérance (+/- 25 cents)
+    // Ensuite la ligne principale
+    pitchCanvasCtx.strokeStyle = '#4a6da7';
+    pitchCanvasCtx.lineWidth = 2;
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.moveTo(0, targetY);
+    pitchCanvasCtx.lineTo(canvasWidth, targetY);
+    pitchCanvasCtx.stroke();
+    
+    // Mettre en évidence la note cible
+    pitchCanvasCtx.fillStyle = 'rgba(74, 109, 167, 0.8)';
+    pitchCanvasCtx.font = 'bold 12px sans-serif';
+    pitchCanvasCtx.textAlign = 'left';
+    pitchCanvasCtx.fillText(`${currentNote.name} (${Math.round(targetFrequency)} Hz)`, canvasWidth - 150, targetY - 5);
+    
+    // Ajouter une zone de tolérance avec un dégradé pour une meilleure visualisation
     const tolerance = 25; // cents
     const upperFreq = targetFrequency * Math.pow(2, tolerance / 1200);
     const lowerFreq = targetFrequency * Math.pow(2, -tolerance / 1200);
@@ -773,64 +822,278 @@ function drawPitchVisualization(detectedFrequency) {
     const upperY = freqToY(upperFreq);
     const lowerY = freqToY(lowerFreq);
     
-    pitchCanvasCtx.fillStyle = 'rgba(74, 109, 167, 0.2)';
+    // Créer un dégradé pour la zone de tolérance
+    const toleranceGradient = pitchCanvasCtx.createLinearGradient(0, upperY, 0, lowerY);
+    toleranceGradient.addColorStop(0, 'rgba(74, 109, 167, 0.05)');
+    toleranceGradient.addColorStop(0.5, 'rgba(74, 109, 167, 0.2)');
+    toleranceGradient.addColorStop(1, 'rgba(74, 109, 167, 0.05)');
+    
+    pitchCanvasCtx.fillStyle = toleranceGradient;
     pitchCanvasCtx.fillRect(0, upperY, canvasWidth, lowerY - upperY);
     
-    // Dessiner la fréquence détectée
-    const detectedY = freqToY(detectedFrequency);
+    // Ajouter des lignes pour marquer les limites de tolérance
+    pitchCanvasCtx.strokeStyle = 'rgba(74, 109, 167, 0.4)';
+    pitchCanvasCtx.lineWidth = 1;
+    pitchCanvasCtx.setLineDash([3, 3]);
+    
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.moveTo(0, upperY);
+    pitchCanvasCtx.lineTo(canvasWidth, upperY);
+    pitchCanvasCtx.stroke();
+    
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.moveTo(0, lowerY);
+    pitchCanvasCtx.lineTo(canvasWidth, lowerY);
+    pitchCanvasCtx.stroke();
+    
+    pitchCanvasCtx.setLineDash([]);
     
     // Calculer la différence en cents
     const centsDiff = 1200 * Math.log2(detectedFrequency / targetFrequency);
     const inTolerance = Math.abs(centsDiff) <= tolerance;
     
-    // Choisir la couleur en fonction de la précision
-    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
+    // Créer un historique des fréquences détectées pour tracer une ligne
+    if (!window.frequencyHistory) {
+        window.frequencyHistory = [];
+    }
     
-    // Dessiner un point pour la fréquence détectée
+    // Ajouter la fréquence actuelle à l'historique et limiter la taille
+    window.frequencyHistory.push({
+        frequency: detectedFrequency,
+        timestamp: Date.now()
+    });
+    
+    // Garder seulement les dernières 3 secondes (ou environ 30 points avec un rafraîchissement de 100ms)
+    const currentTime = Date.now();
+    window.frequencyHistory = window.frequencyHistory.filter(
+        item => currentTime - item.timestamp < 3000
+    );
+    
+    // Dessiner l'historique des fréquences comme une ligne continue
+    if (window.frequencyHistory.length > 1) {
+        pitchCanvasCtx.strokeStyle = inTolerance ? '#4caf50' : '#e63946';
+        pitchCanvasCtx.lineWidth = 3;
+        pitchCanvasCtx.lineJoin = 'round';
+        pitchCanvasCtx.beginPath();
+        
+        // Calculer l'espacement horizontal
+        const timeSpan = currentTime - window.frequencyHistory[0].timestamp;
+        const xScale = canvasWidth / Math.max(timeSpan, 3000);
+        
+        // Commencer par le point le plus ancien
+        const firstPoint = window.frequencyHistory[0];
+        const firstX = (currentTime - firstPoint.timestamp) * xScale;
+        const firstY = freqToY(firstPoint.frequency);
+        pitchCanvasCtx.moveTo(canvasWidth - firstX, firstY);
+        
+        // Tracer le reste des points
+        for (let i = 1; i < window.frequencyHistory.length; i++) {
+            const point = window.frequencyHistory[i];
+            const x = canvasWidth - (currentTime - point.timestamp) * xScale;
+            const y = freqToY(point.frequency);
+            pitchCanvasCtx.lineTo(x, y);
+        }
+        
+        pitchCanvasCtx.stroke();
+    }
+    
+    // Dessiner le point actuel de fréquence détectée avec un effet de brillance
+    const detectedY = freqToY(detectedFrequency);
+    
+    // Effet de halo
+    const gradient2 = pitchCanvasCtx.createRadialGradient(
+        canvasWidth - 20, detectedY, 3,
+        canvasWidth - 20, detectedY, 15
+    );
+    gradient2.addColorStop(0, inTolerance ? 'rgba(76, 175, 80, 0.8)' : 'rgba(230, 57, 70, 0.8)');
+    gradient2.addColorStop(1, inTolerance ? 'rgba(76, 175, 80, 0)' : 'rgba(230, 57, 70, 0)');
+    
+    pitchCanvasCtx.fillStyle = gradient2;
     pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(canvasWidth / 2, detectedY, 8, 0, Math.PI * 2);
+    pitchCanvasCtx.arc(canvasWidth - 20, detectedY, 15, 0, Math.PI * 2);
     pitchCanvasCtx.fill();
     
-    // Ajouter un texte informatif
-    pitchCanvasCtx.fillStyle = '#333';
-    pitchCanvasCtx.font = '12px sans-serif';
-    pitchCanvasCtx.textAlign = 'right';
+    // Point central
+    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.arc(canvasWidth - 20, detectedY, 6, 0, Math.PI * 2);
+    pitchCanvasCtx.fill();
     
-    pitchCanvasCtx.fillText(`Fréquence: ${Math.round(detectedFrequency)} Hz`, canvasWidth - 10, 20);
-    pitchCanvasCtx.fillText(`Différence: ${Math.round(centsDiff)} cents`, canvasWidth - 10, 40);
+    // Cercle blanc intérieur pour effet de brillance
+    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.arc(canvasWidth - 22, detectedY - 2, 2, 0, Math.PI * 2);
+    pitchCanvasCtx.fill();
+    
+    // Ajouter un panneau d'information
+    const infoBoxWidth = 180;
+    const infoBoxHeight = 90;
+    const infoBoxX = 10;
+    const infoBoxY = 10;
+    
+    // Dessiner le fond du panneau
+    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    pitchCanvasCtx.strokeStyle = inTolerance ? '#4caf50' : '#e63946';
+    pitchCanvasCtx.lineWidth = 2;
+    
+    // Fond avec coins arrondis
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.roundRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight, 8);
+    pitchCanvasCtx.fill();
+    pitchCanvasCtx.stroke();
+    
+    // Information textuelle
+    pitchCanvasCtx.textAlign = 'left';
+    pitchCanvasCtx.fillStyle = '#212529';
+    pitchCanvasCtx.font = 'bold 12px sans-serif';
+    pitchCanvasCtx.fillText('Informations:', infoBoxX + 10, infoBoxY + 20);
+    
+    pitchCanvasCtx.font = '12px sans-serif';
+    pitchCanvasCtx.fillText(`Fréquence: ${Math.round(detectedFrequency)} Hz`, infoBoxX + 10, infoBoxY + 40);
+    
+    // Afficher la différence avec une couleur correspondant à la précision
+    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
+    pitchCanvasCtx.fillText(`Différence: ${Math.round(centsDiff)} cents`, infoBoxX + 10, infoBoxY + 60);
+    
+    // Ajouter une indication visuelle de la direction
+    const arrowX = infoBoxX + 125;
+    const arrowY = infoBoxY + 60;
+    
+    if (Math.abs(centsDiff) > 5) {
+        pitchCanvasCtx.beginPath();
+        if (centsDiff > 0) {
+            // Flèche vers le haut
+            pitchCanvasCtx.moveTo(arrowX, arrowY);
+            pitchCanvasCtx.lineTo(arrowX - 5, arrowY + 8);
+            pitchCanvasCtx.lineTo(arrowX + 5, arrowY + 8);
+        } else {
+            // Flèche vers le bas
+            pitchCanvasCtx.moveTo(arrowX, arrowY + 8);
+            pitchCanvasCtx.lineTo(arrowX - 5, arrowY);
+            pitchCanvasCtx.lineTo(arrowX + 5, arrowY);
+        }
+        pitchCanvasCtx.closePath();
+        pitchCanvasCtx.fill();
+    }
     
     // Ajouter une indication verbale
     let indicationText = "";
     
     if (Math.abs(centsDiff) < 5) {
         indicationText = "Parfait !";
-    } else if (centsDiff > 0) {
-        indicationText = "Trop haut";
+    } else if (Math.abs(centsDiff) < 25) {
+        indicationText = inTolerance ? "Très bien !" : (centsDiff > 0 ? "Un peu trop haut" : "Un peu trop bas");
     } else {
-        indicationText = "Trop bas";
+        indicationText = centsDiff > 0 ? "Trop haut" : "Trop bas";
     }
     
-    pitchCanvasCtx.font = '16px sans-serif';
+    pitchCanvasCtx.fillStyle = '#212529';
+    pitchCanvasCtx.font = 'bold 14px sans-serif';
     pitchCanvasCtx.textAlign = 'center';
-    pitchCanvasCtx.fillText(indicationText, canvasWidth / 2, canvasHeight - 20);
+    pitchCanvasCtx.fillText(indicationText, infoBoxX + infoBoxWidth / 2, infoBoxY + 80);
+    
+    // Jauge visuelle du niveau sonore
+    if (analyser) {
+        const dataArray = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(dataArray);
+        
+        // Calculer le niveau RMS
+        let rms = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+            const amplitude = (dataArray[i] - 128) / 128;
+            rms += amplitude * amplitude;
+        }
+        rms = Math.sqrt(rms / dataArray.length);
+        
+        // Dessiner la jauge de volume
+        const gaugeX = canvasWidth - 100;
+        const gaugeY = canvasHeight - 30;
+        const gaugeWidth = 80;
+        const gaugeHeight = 10;
+        
+        // Fond de la jauge
+        pitchCanvasCtx.fillStyle = '#e9ecef';
+        pitchCanvasCtx.beginPath();
+        pitchCanvasCtx.roundRect(gaugeX, gaugeY, gaugeWidth, gaugeHeight, 5);
+        pitchCanvasCtx.fill();
+        
+        // Niveau de la jauge
+        const level = Math.min(rms * 3, 1); // Multiplier par 3 pour amplifier et plafonner à 1
+        
+        // Couleur basée sur le niveau
+        let gaugeColor;
+        if (level < 0.3) gaugeColor = '#4a6da7'; // Bleu pour faible
+        else if (level < 0.7) gaugeColor = '#4caf50'; // Vert pour bon
+        else gaugeColor = '#e63946'; // Rouge pour fort
+        
+        pitchCanvasCtx.fillStyle = gaugeColor;
+        pitchCanvasCtx.beginPath();
+        pitchCanvasCtx.roundRect(gaugeX, gaugeY, gaugeWidth * level, gaugeHeight, 5);
+        pitchCanvasCtx.fill();
+        
+        // Étiquette
+        pitchCanvasCtx.fillStyle = '#212529';
+        pitchCanvasCtx.font = '10px sans-serif';
+        pitchCanvasCtx.textAlign = 'right';
+        pitchCanvasCtx.fillText('Volume:', gaugeX - 5, gaugeY + 8);
+    }
 }
-
 // Dessiner un canvas vide avec des instructions
+// Dessiner un canvas vide avec des instructions améliorées
 function drawEmptyPitchCanvas() {
     pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
     
-    // Dessiner l'arrière-plan
-    pitchCanvasCtx.fillStyle = '#f5f5f5';
+    // Dessiner l'arrière-plan avec un dégradé
+    const gradient = pitchCanvasCtx.createLinearGradient(0, 0, 0, pitchCanvas.height);
+    gradient.addColorStop(0, '#f8f9fa');
+    gradient.addColorStop(1, '#e9ecef');
+    pitchCanvasCtx.fillStyle = gradient;
     pitchCanvasCtx.fillRect(0, 0, pitchCanvas.width, pitchCanvas.height);
     
-    // Ajouter un texte d'instructions
-    pitchCanvasCtx.fillStyle = '#666';
+    // Zone d'instructions avec fond semi-transparent
+    const boxWidth = 300;
+    const boxHeight = 100;
+    const boxX = (pitchCanvas.width - boxWidth) / 2;
+    const boxY = (pitchCanvas.height - boxHeight) / 2;
+    
+    // Fond avec coins arrondis
+    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    pitchCanvasCtx.strokeStyle = '#4a6da7';
+    pitchCanvasCtx.lineWidth = 2;
+    
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.roundRect(boxX, boxY, boxWidth, boxHeight, 10);
+    pitchCanvasCtx.fill();
+    pitchCanvasCtx.stroke();
+    
+    // Icône de microphone
+    pitchCanvasCtx.fillStyle = '#4a6da7';
+    const micX = pitchCanvas.width / 2;
+    const micY = boxY + 35;
+    
+    // Dessiner un microphone stylisé
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.arc(micX, micY, 15, 0, Math.PI * 2);
+    pitchCanvasCtx.fill();
+    
+    pitchCanvasCtx.fillStyle = '#ffffff';
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.roundRect(micX - 5, micY - 8, 10, 16, 3);
+    pitchCanvasCtx.fill();
+    
+    pitchCanvasCtx.strokeStyle = '#4a6da7';
+    pitchCanvasCtx.lineWidth = 2;
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.arc(micX, micY + 25, 8, Math.PI, Math.PI * 2);
+    pitchCanvasCtx.stroke();
+    
+    // Texte d'instructions
+    pitchCanvasCtx.fillStyle = '#495057';
     pitchCanvasCtx.font = '14px sans-serif';
     pitchCanvasCtx.textAlign = 'center';
-    pitchCanvasCtx.fillText("Appuyez sur 'Enregistrer' ou 'Démarrer exercice'", pitchCanvas.width / 2, pitchCanvas.height / 2 - 10);
-    pitchCanvasCtx.fillText("pour voir votre hauteur vocale en temps réel", pitchCanvas.width / 2, pitchCanvas.height / 2 + 10);
+    pitchCanvasCtx.fillText("Appuyez sur 'Enregistrer' ou 'Démarrer exercice'", micX, boxY + 70);
+    pitchCanvasCtx.fillText("pour voir votre hauteur vocale en temps réel", micX, boxY + 90);
 }
-
 // Analyser l'enregistrement
 async function analyzeRecording(blob) {
     // Convertir le blob en ArrayBuffer
