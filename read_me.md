@@ -17,36 +17,13 @@ Cette application web permet de réaliser des exercices d'orthophonie basés sur
 projet_prototype/
 │
 ├── index.html                # Page HTML principale
-├── styles/                   # Dossier pour les styles CSS
-│   └── main.css              # Fichier CSS principal
-├── scripts/                  # Dossier pour les scripts JavaScript
-│   └── main.js               # Fichier JavaScript principal
+├── css-file.css              # Dossier pour les styles CSS
+│                             # Fichier CSS principal
+├── js-file.js                # Dossier pour les scripts JavaScript
+│                             # Fichier JavaScript principal
 ├── assets/                   # Ressources (images, polices, etc.)
 │   ├── images/               # Images utilisées dans le projet
 │   └── fonts/                # Polices personnalisées
-│
-├── main.py                   # Point d'entrée principal
-├── config.py                 # Configuration globale
-├── README.md                 # Documentation
-├── requirements.txt          # Dépendances
-│
-├── classes/                  # Définitions de classes
-│   ├── __init__.py
-│   ├── base_entity.py        # Classe de base
-│   ├── data_model.py         # Modèle de données
-│   └── processor.py          # Classe de traitement
-│
-├── workflows/                # Processus métier
-│   ├── __init__.py
-│   ├── data_acquisition.py   # Acquisition de données
-│   ├── data_processing.py    # Traitement des données
-│   └── reporting.py          # Génération de rapports
-│
-└── utils/                    # Utilitaires
-    ├── __init__.py
-    ├── logger.py             # Système de journalisation
-    ├── validators.py         # Validation de données
-    └── helpers.py            # Fonctions d'aide diverses
 ```
 
 ## Installation et lancement
