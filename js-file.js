@@ -456,40 +456,58 @@ function calculateCents(f1, f2) {
 }
 
 // Démarrer l'enregistrement
+// Démarrer l'enregistrement
 async function startRecording(isAutomatic = false) {
     try {
         // Demander l'accès au microphone
         audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: { 
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: false // Désactiver le contrôle automatique de gain pour une meilleure détection de hauteur
-            } 
+            audio: true // Simplifier pour réduire les erreurs potentielles
         });
         
         // Configurer l'analyseur audio
         setupAudioAnalysis(audioStream);
         
-        // Configurer l'enregistreur
-        mediaRecorder = new MediaRecorder(audioStream, {
-            mimeType: 'audio/webm;codecs=opus' // Format de haute qualité pour une meilleure analyse
-        });
+        // Configurer l'enregistreur avec détection du format MIME
+        let mimeType = 'audio/webm';
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+            mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+            mimeType = 'audio/webm';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+            mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+            mimeType = 'audio/ogg';
+        }
+        
+        mediaRecorder = new MediaRecorder(audioStream, { mimeType });
         
         audioChunks = [];
         
+        // S'assurer que l'événement dataavailable est déclenché
         mediaRecorder.addEventListener('dataavailable', event => {
-            audioChunks.push(event.data);
+            if (event.data.size > 0) {
+                audioChunks.push(event.data);
+                console.log('Chunk de données audio reçu:', event.data.size, 'bytes');
+            }
         });
         
         mediaRecorder.addEventListener('stop', () => {
+            console.log('Enregistrement arrêté, chunks:', audioChunks.length);
+            
             // Arrêter la visualisation en temps réel
             isVisualizing = false;
             if (pitchDetectionInterval) {
                 clearInterval(pitchDetectionInterval);
             }
             
+            if (audioChunks.length === 0) {
+                console.error('Aucune donnée audio capturée');
+                alert('Aucune donnée audio n\'a été capturée. Veuillez vérifier votre microphone.');
+                return;
+            }
+            
             // Créer un blob audio à partir des chunks
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
+            const audioBlob = new Blob(audioChunks, { type: mimeType });
             const audioUrl = URL.createObjectURL(audioBlob);
             
             // Créer un lecteur audio
@@ -509,8 +527,10 @@ async function startRecording(isAutomatic = false) {
             drawEmptyPitchCanvas();
         });
         
-        // Démarrer l'enregistrement
-        mediaRecorder.start();
+        // Démarrer l'enregistrement avec un timeslice pour s'assurer que dataavailable est déclenché
+        mediaRecorder.start(1000); // Déclencher dataavailable toutes les secondes
+        
+        console.log('Enregistrement démarré avec format:', mimeType);
         
         // Démarrer la visualisation en temps réel
         isVisualizing = true;
@@ -525,7 +545,7 @@ async function startRecording(isAutomatic = false) {
         
     } catch (error) {
         console.error('Erreur lors de l\'accès au microphone:', error);
-        alert('Impossible d\'accéder au microphone. Veuillez vérifier les autorisations.');
+        alert('Impossible d\'accéder au microphone: ' + error.message + '. Veuillez vérifier les autorisations et que votre microphone est connecté.');
         
         // Réactiver les boutons en cas d'erreur
         recordBtn.disabled = false;
@@ -533,7 +553,6 @@ async function startRecording(isAutomatic = false) {
         startBtn.disabled = false;
     }
 }
-
 // Arrêter l'enregistrement
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
