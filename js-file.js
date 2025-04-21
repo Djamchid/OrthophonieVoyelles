@@ -51,23 +51,44 @@ const pitchAnalysisEl = document.getElementById('pitch-analysis');
 
 // Variables globales
 let currentVowel = 'o';
-let currentNote = { name: 'mi', frequency: 329.63 };
+let currentNote = { name: 'mi médium', frequency: 329.63, notation: 'E4' };
 let timerInterval;
 let mediaRecorder;
 let audioChunks = [];
 let audioStream;
 let analyser;
 let audioContext;
+let pitchDetectionInterval;
+let pitchCanvas;
+let pitchCanvasCtx;
+let isVisualizing = false;
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', () => {
+    // Initialiser le canvas de visualisation du pitch
+    pitchCanvas = document.getElementById('pitch-canvas');
+    pitchCanvasCtx = pitchCanvas.getContext('2d');
+    
+    // Initialiser l'affichage de la notation musicale
     drawMusicNotation(currentNote);
+    
+    // Initialiser l'audioContext
+    try {
+        window.AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
+    } catch (e) {
+        console.error('Web Audio API n\'est pas supportée par ce navigateur.');
+        alert('Votre navigateur ne supporte pas les API audio nécessaires. Veuillez utiliser un navigateur récent comme Chrome ou Firefox.');
+    }
     
     // Événements
     generateBtn.addEventListener('click', generateExercise);
     startBtn.addEventListener('click', startExercise);
     recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
+    
+    // Dessiner le canvas de visualisation initial
+    drawEmptyPitchCanvas();
 });
 
 // Générer un nouvel exercice
@@ -76,9 +97,11 @@ function generateExercise() {
     const randomVowelIndex = Math.floor(Math.random() * vowels.length);
     currentVowel = vowels[randomVowelIndex];
     
-    // Sélectionner une note aléatoire
-    const randomNoteIndex = Math.floor(Math.random() * notes.length);
-    currentNote = notes[randomNoteIndex];
+    // Sélectionner une note aléatoire dans la plage 90-880Hz
+    // On filtre les notes qui sont dans cette plage
+    const notesInRange = notes.filter(note => note.frequency >= 90 && note.frequency <= 880);
+    const randomNoteIndex = Math.floor(Math.random() * notesInRange.length);
+    currentNote = notesInRange[randomNoteIndex];
     
     // Mettre à jour l'affichage
     selectedVowelEl.textContent = currentVowel;
@@ -86,58 +109,120 @@ function generateExercise() {
     
     // Mettre à jour la notation musicale
     drawMusicNotation(currentNote);
+    
+    // Réinitialiser l'analyse
+    pitchAnalysisEl.innerHTML = '';
+    
+    // Jouer la note de référence brièvement
+    playReferenceNote(currentNote.frequency, 0.5);
 }
 
 // Démarrer l'exercice avec un compte à rebours
 function startExercise() {
     let timeLeft = 10;
     
-    // Désactiver le bouton pendant l'exercice
+    // Désactiver les boutons pendant l'exercice
     startBtn.disabled = true;
     generateBtn.disabled = true;
+    recordBtn.disabled = true;
+    
+    // Si un enregistrement est en cours, l'arrêter
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        stopRecording();
+    }
     
     // Mettre à jour le compte à rebours
     timerEl.textContent = timeLeft;
     
-    // Jouer la note de référence
-    playReferenceNote(currentNote.frequency);
+    // Animation du timer
+    timerEl.classList.add('active');
     
-    timerInterval = setInterval(() => {
-        timeLeft--;
-        timerEl.textContent = timeLeft;
+    // Jouer la note de référence et attendre qu'elle soit terminée
+    const noteDuration = playReferenceNote(currentNote.frequency, 2);
+    
+    // Attendre que la note soit terminée avant de commencer le compte à rebours
+    setTimeout(() => {
+        // Démarrer automatiquement l'enregistrement
+        startRecording(true); // Le paramètre true indique que c'est un enregistrement automatique
         
-        if (timeLeft <= 0) {
-            clearInterval(timerInterval);
-            timerEl.textContent = '10';
-            startBtn.disabled = false;
-            generateBtn.disabled = false;
-        }
-    }, 1000);
+        // Démarrer le compte à rebours
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            timerEl.textContent = timeLeft;
+            
+            // Visualiser le pitch en temps réel
+            if (audioStream && analyser) {
+                visualizePitch();
+            }
+            
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                timerEl.textContent = '10';
+                timerEl.classList.remove('active');
+                
+                // Arrêter l'enregistrement automatiquement
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    stopRecording();
+                }
+                
+                // Réactiver les boutons
+                startBtn.disabled = false;
+                generateBtn.disabled = false;
+                recordBtn.disabled = false;
+            }
+        }, 1000);
+    }, noteDuration * 1000);
 }
 
 // Jouer une note de référence
-function playReferenceNote(frequency) {
+function playReferenceNote(frequency, duration = 1) {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    // Si l'audioContext est suspendu (politique d'autoplay), le reprendre
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
     }
     
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
     
+    // Utiliser une forme d'onde sinusoïdale pour un son plus proche de la voix
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
     
-    // Appliquer une enveloppe au son
+    // Appliquer une enveloppe au son pour un effet plus naturel
     gainNode.gain.setValueAtTime(0, audioContext.currentTime);
     gainNode.gain.linearRampToValueAtTime(0.5, audioContext.currentTime + 0.1);
     gainNode.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.3);
-    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 1);
+    gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + duration);
     
+    // Ajouter un léger vibrato pour rendre le son plus naturel
+    const lfoFrequency = 5; // 5Hz - vitesse du vibrato
+    const lfoDepth = 3;     // +/- 3Hz - profondeur du vibrato
+    
+    const lfo = audioContext.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = lfoFrequency;
+    
+    const lfoGain = audioContext.createGain();
+    lfoGain.gain.value = lfoDepth;
+    
+    lfo.connect(lfoGain);
+    lfoGain.connect(oscillator.frequency);
+    
+    // Connecter les nœuds et démarrer les oscillateurs
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
     oscillator.start();
-    oscillator.stop(audioContext.currentTime + 1);
+    lfo.start();
+    
+    oscillator.stop(audioContext.currentTime + duration);
+    lfo.stop(audioContext.currentTime + duration);
+    
+    return duration; // Retourner la durée pour permettre la coordination avec d'autres fonctions
 }
 
 // Dessiner la notation musicale
@@ -371,16 +456,25 @@ function calculateCents(f1, f2) {
 }
 
 // Démarrer l'enregistrement
-async function startRecording() {
+async function startRecording(isAutomatic = false) {
     try {
         // Demander l'accès au microphone
-        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        audioStream = await navigator.mediaDevices.getUserMedia({ 
+            audio: { 
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: false // Désactiver le contrôle automatique de gain pour une meilleure détection de hauteur
+            } 
+        });
         
         // Configurer l'analyseur audio
         setupAudioAnalysis(audioStream);
         
         // Configurer l'enregistreur
-        mediaRecorder = new MediaRecorder(audioStream);
+        mediaRecorder = new MediaRecorder(audioStream, {
+            mimeType: 'audio/webm;codecs=opus' // Format de haute qualité pour une meilleure analyse
+        });
+        
         audioChunks = [];
         
         mediaRecorder.addEventListener('dataavailable', event => {
@@ -388,8 +482,14 @@ async function startRecording() {
         });
         
         mediaRecorder.addEventListener('stop', () => {
+            // Arrêter la visualisation en temps réel
+            isVisualizing = false;
+            if (pitchDetectionInterval) {
+                clearInterval(pitchDetectionInterval);
+            }
+            
             // Créer un blob audio à partir des chunks
-            const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm;codecs=opus' });
             const audioUrl = URL.createObjectURL(audioBlob);
             
             // Créer un lecteur audio
@@ -404,18 +504,33 @@ async function startRecording() {
             
             // Analyser l'enregistrement
             analyzeRecording(audioBlob);
+            
+            // Dessiner un canvas vide
+            drawEmptyPitchCanvas();
         });
         
         // Démarrer l'enregistrement
         mediaRecorder.start();
         
-        // Mettre à jour les boutons
-        recordBtn.disabled = true;
-        stopBtn.disabled = false;
+        // Démarrer la visualisation en temps réel
+        isVisualizing = true;
+        startRealtimeVisualization();
+        
+        // Mettre à jour les boutons (sauf si c'est un enregistrement automatique)
+        if (!isAutomatic) {
+            recordBtn.disabled = true;
+            stopBtn.disabled = false;
+            startBtn.disabled = true;
+        }
         
     } catch (error) {
         console.error('Erreur lors de l\'accès au microphone:', error);
         alert('Impossible d\'accéder au microphone. Veuillez vérifier les autorisations.');
+        
+        // Réactiver les boutons en cas d'erreur
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
     }
 }
 
@@ -423,11 +538,25 @@ async function startRecording() {
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        audioStream.getTracks().forEach(track => track.stop());
+        
+        // Arrêter tous les tracks audio
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => track.stop());
+        }
+        
+        // Arrêter la visualisation en temps réel
+        isVisualizing = false;
+        if (pitchDetectionInterval) {
+            clearInterval(pitchDetectionInterval);
+        }
         
         // Mettre à jour les boutons
         recordBtn.disabled = false;
         stopBtn.disabled = true;
+        startBtn.disabled = false;
+        
+        // Dessiner un canvas vide pour la visualisation
+        drawEmptyPitchCanvas();
     }
 }
 
@@ -437,13 +566,250 @@ function setupAudioAnalysis(stream) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     
+    // Si l'audioContext est suspendu, le reprendre
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    
+    // Créer un analyseur avec une bonne résolution fréquentielle
     analyser = audioContext.createAnalyser();
+    analyser.fftSize = 4096; // Taille FFT plus grande pour une meilleure résolution de fréquence
+    analyser.smoothingTimeConstant = 0.8; // Lissage temporel pour réduire le bruit
+    
+    // Créer une source audio à partir du stream
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(analyser);
     
-    analyser.fftSize = 2048;
+    // Ne pas connecter à destination pour éviter l'écho
+    // analyser.connect(audioContext.destination);
+}
+
+// Démarrer la visualisation en temps réel
+function startRealtimeVisualization() {
+    if (pitchDetectionInterval) {
+        clearInterval(pitchDetectionInterval);
+    }
     
-    // On pourrait ajouter ici un visualiseur en temps réel
+    // Mettre à jour toutes les 100ms
+    pitchDetectionInterval = setInterval(() => {
+        if (isVisualizing && analyser) {
+            visualizePitch();
+        } else {
+            clearInterval(pitchDetectionInterval);
+        }
+    }, 100);
+}
+
+// Visualiser la hauteur en temps réel
+function visualizePitch() {
+    // Obtenir les données audio
+    const bufferLength = analyser.fftSize;
+    const timeData = new Float32Array(bufferLength);
+    analyser.getFloatTimeDomainData(timeData);
+    
+    // Calculer la fréquence fondamentale à l'aide de l'autocorrélation
+    const frequency = detectPitchFromBuffer(timeData, audioContext.sampleRate);
+    
+    // Dessiner la visualisation
+    drawPitchVisualization(frequency);
+}
+
+// Détecter la hauteur à partir d'un buffer audio
+function detectPitchFromBuffer(buffer, sampleRate) {
+    // Algorithme d'autocorrélation simplifié
+    const bufferSize = buffer.length;
+    
+    // Vérifier si le signal est assez fort
+    let rms = 0;
+    for (let i = 0; i < bufferSize; i++) {
+        rms += buffer[i] * buffer[i];
+    }
+    rms = Math.sqrt(rms / bufferSize);
+    
+    // Si le signal est trop faible, retourner 0
+    if (rms < 0.01) return 0;
+    
+    // Appliquer une fenêtre de Hann pour réduire les artefacts
+    const hannWindow = new Float32Array(bufferSize);
+    for (let i = 0; i < bufferSize; i++) {
+        hannWindow[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (bufferSize - 1)));
+        buffer[i] *= hannWindow[i];
+    }
+    
+    // Calculer l'autocorrélation
+    const correlation = new Float32Array(bufferSize);
+    for (let lag = 0; lag < bufferSize; lag++) {
+        let sum = 0;
+        for (let i = 0; i < bufferSize - lag; i++) {
+            sum += buffer[i] * buffer[i + lag];
+        }
+        correlation[lag] = sum;
+    }
+    
+    // Trouver les pics dans l'autocorrélation
+    // Ignorer les premiers échantillons (fréquences trop élevées)
+    const minPeriod = Math.floor(sampleRate / 1000); // ~1000 Hz max
+    const maxPeriod = Math.floor(sampleRate / 80);  // ~80 Hz min
+    
+    let maxCorrelation = 0;
+    let period = 0;
+    
+    for (let i = minPeriod; i < maxPeriod; i++) {
+        if (correlation[i] > maxCorrelation) {
+            maxCorrelation = correlation[i];
+            period = i;
+        }
+    }
+    
+    // Si aucun pic n'est trouvé, retourner 0
+    if (period === 0) return 0;
+    
+    // Affiner la période par interpolation parabolique
+    const y1 = correlation[period - 1];
+    const y2 = correlation[period];
+    const y3 = correlation[period + 1];
+    
+    const refinedPeriod = period + 0.5 * (y1 - y3) / (y1 - 2 * y2 + y3);
+    
+    // Convertir la période en fréquence
+    const frequency = sampleRate / refinedPeriod;
+    
+    return frequency;
+}
+
+// Dessiner la visualisation du pitch
+function drawPitchVisualization(detectedFrequency) {
+    // Effacer le canvas
+    pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
+    
+    // Si aucune fréquence n'est détectée, dessiner un canvas vide
+    if (!detectedFrequency || detectedFrequency === 0) {
+        drawEmptyPitchCanvas();
+        return;
+    }
+    
+    // Fréquence cible
+    const targetFrequency = currentNote.frequency;
+    
+    // Convertir les fréquences en position Y sur le canvas
+    // Utiliser une échelle logarithmique pour les fréquences
+    const minFreq = 80;
+    const maxFreq = 1000;
+    const canvasHeight = pitchCanvas.height;
+    const canvasWidth = pitchCanvas.width;
+    
+    // Fonction pour convertir une fréquence en position Y
+    const freqToY = (freq) => {
+        if (freq < minFreq) freq = minFreq;
+        if (freq > maxFreq) freq = maxFreq;
+        
+        const logMinFreq = Math.log(minFreq);
+        const logMaxFreq = Math.log(maxFreq);
+        const logFreq = Math.log(freq);
+        
+        // Inverser Y car 0 est en haut dans un canvas
+        return canvasHeight - (canvasHeight * (logFreq - logMinFreq) / (logMaxFreq - logMinFreq));
+    };
+    
+    // Dessiner l'arrière-plan
+    pitchCanvasCtx.fillStyle = '#f5f5f5';
+    pitchCanvasCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+    
+    // Dessiner des lignes horizontales pour les notes de référence
+    pitchCanvasCtx.strokeStyle = '#ddd';
+    pitchCanvasCtx.lineWidth = 1;
+    
+    for (const note of notes) {
+        const y = freqToY(note.frequency);
+        
+        pitchCanvasCtx.beginPath();
+        pitchCanvasCtx.moveTo(0, y);
+        pitchCanvasCtx.lineTo(canvasWidth, y);
+        pitchCanvasCtx.stroke();
+        
+        // Ajouter le nom de la note
+        if (note.frequency >= minFreq && note.frequency <= maxFreq) {
+            pitchCanvasCtx.fillStyle = '#999';
+            pitchCanvasCtx.font = '10px sans-serif';
+            pitchCanvasCtx.fillText(note.name, 5, y - 3);
+        }
+    }
+    
+    // Dessiner la ligne de fréquence cible
+    const targetY = freqToY(targetFrequency);
+    
+    pitchCanvasCtx.strokeStyle = '#4a6da7';
+    pitchCanvasCtx.lineWidth = 2;
+    
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.moveTo(0, targetY);
+    pitchCanvasCtx.lineTo(canvasWidth, targetY);
+    pitchCanvasCtx.stroke();
+    
+    // Ajouter une zone de tolérance (+/- 25 cents)
+    const tolerance = 25; // cents
+    const upperFreq = targetFrequency * Math.pow(2, tolerance / 1200);
+    const lowerFreq = targetFrequency * Math.pow(2, -tolerance / 1200);
+    
+    const upperY = freqToY(upperFreq);
+    const lowerY = freqToY(lowerFreq);
+    
+    pitchCanvasCtx.fillStyle = 'rgba(74, 109, 167, 0.2)';
+    pitchCanvasCtx.fillRect(0, upperY, canvasWidth, lowerY - upperY);
+    
+    // Dessiner la fréquence détectée
+    const detectedY = freqToY(detectedFrequency);
+    
+    // Calculer la différence en cents
+    const centsDiff = 1200 * Math.log2(detectedFrequency / targetFrequency);
+    const inTolerance = Math.abs(centsDiff) <= tolerance;
+    
+    // Choisir la couleur en fonction de la précision
+    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
+    
+    // Dessiner un point pour la fréquence détectée
+    pitchCanvasCtx.beginPath();
+    pitchCanvasCtx.arc(canvasWidth / 2, detectedY, 8, 0, Math.PI * 2);
+    pitchCanvasCtx.fill();
+    
+    // Ajouter un texte informatif
+    pitchCanvasCtx.fillStyle = '#333';
+    pitchCanvasCtx.font = '12px sans-serif';
+    pitchCanvasCtx.textAlign = 'right';
+    
+    pitchCanvasCtx.fillText(`Fréquence: ${Math.round(detectedFrequency)} Hz`, canvasWidth - 10, 20);
+    pitchCanvasCtx.fillText(`Différence: ${Math.round(centsDiff)} cents`, canvasWidth - 10, 40);
+    
+    // Ajouter une indication verbale
+    let indicationText = "";
+    
+    if (Math.abs(centsDiff) < 5) {
+        indicationText = "Parfait !";
+    } else if (centsDiff > 0) {
+        indicationText = "Trop haut";
+    } else {
+        indicationText = "Trop bas";
+    }
+    
+    pitchCanvasCtx.font = '16px sans-serif';
+    pitchCanvasCtx.textAlign = 'center';
+    pitchCanvasCtx.fillText(indicationText, canvasWidth / 2, canvasHeight - 20);
+}
+
+// Dessiner un canvas vide avec des instructions
+function drawEmptyPitchCanvas() {
+    pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
+    
+    // Dessiner l'arrière-plan
+    pitchCanvasCtx.fillStyle = '#f5f5f5';
+    pitchCanvasCtx.fillRect(0, 0, pitchCanvas.width, pitchCanvas.height);
+    
+    // Ajouter un texte d'instructions
+    pitchCanvasCtx.fillStyle = '#666';
+    pitchCanvasCtx.font = '14px sans-serif';
+    pitchCanvasCtx.textAlign = 'center';
+    pitchCanvasCtx.fillText("Appuyez sur 'Enregistrer' ou 'Démarrer exercice'", pitchCanvas.width / 2, pitchCanvas.height / 2 - 10);
+    pitchCanvasCtx.fillText("pour voir votre hauteur vocale en temps réel", pitchCanvas.width / 2, pitchCanvas.height / 2 + 10);
 }
 
 // Analyser l'enregistrement
