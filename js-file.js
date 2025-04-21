@@ -1216,6 +1216,16 @@ function refineFrequency(yinBuffer, tau) {
 }
 // Ajoutez ce code à la fin de votre fichier main.js
 window.addEventListener('load', function() {
+    const stopBtnAlt = document.getElementById('stop-btn');
+    if (stopBtnAlt) {
+        console.log("Bouton d'arrêt trouvé, ajout d'un gestionnaire alternatif");
+        stopBtnAlt.onclick = function() {
+            console.log("Bouton d'arrêt cliqué");
+            stopRecording();
+        };
+    } else {
+        console.error("Bouton d'arrêt non trouvé!");
+    }
     console.log("Vérification des boutons...");
     const recordBtnAlt = document.getElementById('record-btn');
     if (recordBtnAlt) {
