@@ -266,8 +266,9 @@ function drawMusicNotation(note, userFrequency = null) {
         const octave = parseInt(notation.charAt(1));
         
         // Mapping corrigé des positions des notes sur la portée en clé de sol
+        // Correction ici : C (do) doit être au-dessus de B (si), pas en-dessous
         const positions = {
-            'C': 10, 'D': 9, 'E': 8, 'F': 7, 'G': 6, 'A': 5, 'B': 4
+            'C': 12, 'D': 11, 'E': 10, 'F': 9, 'G': 8, 'A': 7, 'B': 6
         };
         
         // Calculer la position relative basée sur l'octave
@@ -678,92 +679,4 @@ function analyzeRecording(audioBlob) {
         }
         
         // Convertir l'index en fréquence
-        const frequency = maxIndex * analyzerContext.sampleRate / analyzer.fftSize;
-        
-        // Ignorer les valeurs trop faibles (silence)
-        if (maxValue > -70) {
-            detectedPitch += frequency;
-            detectedVolume += maxValue + 100; // Convertir dB en valeur positive
-            sampleCount++;
-        }
-        
-        // Continuer l'analyse tant que l'audio est en cours de lecture
-        if (!audioElement.ended && !audioElement.paused) {
-            requestAnimationFrame(detectPitch);
-        } else {
-            // Finaliser l'analyse
-            if (sampleCount > 0) {
-                // Calculer les moyennes
-                const averagePitch = detectedPitch / sampleCount;
-                const averageVolume = detectedVolume / sampleCount;
-                
-                // Trouver la note la plus proche
-                const closestNote = findClosestNote(averagePitch);
-                
-                // Calculer la différence en cents
-                const centsDiff = calculateCents(averagePitch, closestNote.frequency);
-                
-                // Comparer avec la note cible
-                const targetCentsDiff = calculateCents(averagePitch, currentNote.frequency);
-                
-                // AJOUT: Calculer l'écart en pourcentage
-                const percentageDiff = Math.abs((averagePitch - currentNote.frequency) / currentNote.frequency * 100);
-                
-                // Mettre à jour l'affichage de l'analyse
-                pitchAnalysisEl.innerHTML = `
-                    <div style="margin-bottom: 10px;">
-                        <strong>Fréquence détectée:</strong> ${Math.round(averagePitch)} Hz
-                        <br>
-                        <strong>Note détectée:</strong> ${closestNote.name} (${Math.round(closestNote.frequency)} Hz)
-                        <br>
-                        <strong>Différence avec la note cible:</strong> ${Math.abs(Math.round(targetCentsDiff))} cents 
-                        ${targetCentsDiff > 0 ? 'au-dessus' : 'en dessous'}
-                        <br>
-                        <strong>Écart en pourcentage:</strong> ${percentageDiff.toFixed(2)}%
-                    </div>
-                    
-                    <div style="margin-top: 15px; padding: 10px; background-color: ${Math.abs(targetCentsDiff) < 50 ? '#c8e6c9' : '#ffcdd2'}; border-radius: 5px;">
-                        <strong>Résultat:</strong> 
-                        ${Math.abs(targetCentsDiff) < 25 
-                            ? 'Excellent! Votre note est très précise.' 
-                            : Math.abs(targetCentsDiff) < 50 
-                                ? 'Bien! Votre note est assez proche.' 
-                                : Math.abs(targetCentsDiff) < 100 
-                                    ? 'À améliorer. Votre note est un peu éloignée.' 
-                                    : 'À retravailler. Votre note est éloignée de la cible.'}
-                    </div>
-                `;
-                
-                // Mettre à jour la notation musicale pour afficher la note détectée
-                drawMusicNotation(currentNote, averagePitch);
-                
-            } else {
-                pitchAnalysisEl.innerHTML = `
-                    <div style="color: #e63946;">
-                        <strong>Aucun son détecté.</strong> Veuillez réessayer l'enregistrement.
-                    </div>
-                `;
-            }
-            
-            // Nettoyer
-            analyzerSource.disconnect();
-            analyzerContext.close();
-        }
-    };
-    
-    // Commencer l'analyse lorsque l'audio est prêt
-    audioElement.addEventListener('canplay', () => {
-        audioElement.play();
-        detectPitch();
-    });
-    
-    // En cas d'erreur
-    audioElement.addEventListener('error', (e) => {
-        console.error('Erreur lors de la lecture de l\'audio:', e);
-        pitchAnalysisEl.innerHTML = `
-            <div style="color: #e63946;">
-                <strong>Erreur lors de l'analyse.</strong> Veuillez réessayer l'enregistrement.
-            </div>
-        `;
-    });
-}
+        const
