@@ -67,6 +67,7 @@ let audioChunks = [];
 let audioStream;
 let audioContext;
 let soundAnalyzer; // Instance de SoundAnalyzer
+let isRecording = false; // Nouvelle variable pour suivre l'état de l'enregistrement
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', () => {
@@ -99,8 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Événements
     generateBtn.addEventListener('click', generateExercise);
     startBtn.addEventListener('click', startExercise);
-    recordBtn.addEventListener('click', startRecording);
-    stopBtn.addEventListener('click', stopRecording);
+    recordBtn.addEventListener('click', toggleRecording); // Modifié pour utiliser toggleRecording
     
     // Initialize the frequency range sliders
     minFreqSlider.addEventListener('input', updateFrequencyRange);
@@ -111,7 +111,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // S'assurer que les boutons ont le bon état initial
     recordBtn.disabled = false;
-    stopBtn.disabled = true;
     
     console.log('Application initialisée, boutons configurés');
 });
@@ -206,7 +205,7 @@ function startExercise() {
     recordBtn.disabled = true;
     
     // Si un enregistrement est en cours, l'arrêter
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    if (isRecording) {
         stopRecording();
     }
     
@@ -235,7 +234,7 @@ function startExercise() {
                 timerEl.classList.remove('active');
                 
                 // Arrêter l'enregistrement automatiquement
-                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                if (isRecording) {
                     stopRecording();
                 }
                 
@@ -529,6 +528,17 @@ function calculateCents(f1, f2) {
     return 1200 * Math.log2(f1 / f2);
 }
 
+// Nouvelle fonction: bascule entre démarrer et arrêter l'enregistrement
+function toggleRecording() {
+    if (isRecording) {
+        stopRecording();
+        recordBtn.textContent = "Enregistrer";
+    } else {
+        startRecording();
+        recordBtn.textContent = "Arrêter";
+    }
+}
+
 // Démarrer l'enregistrement
 async function startRecording(isAutomatic = false) {
     try {
@@ -591,6 +601,14 @@ async function startRecording(isAutomatic = false) {
         mediaRecorder.addEventListener('stop', () => {
             console.log('Enregistrement arrêté, chunks:', audioChunks.length);
             
+            // Marquer l'enregistrement comme terminé
+            isRecording = false;
+            
+            // Modifier le texte du bouton d'enregistrement
+            if (!isAutomatic) {
+                recordBtn.textContent = "Enregistrer";
+            }
+            
             // Arrêter l'analyseur de son
             if (soundAnalyzer) {
                 soundAnalyzer.stopAudio();
@@ -621,7 +639,7 @@ async function startRecording(isAutomatic = false) {
             
             // AJOUT: Réinitialiser l'interface utilisateur
             recordBtn.disabled = false;
-            stopBtn.disabled = true;
+            startBtn.disabled = false;
         });
         
         // Démarrer l'enregistrement avec un timeslice pour s'assurer que dataavailable est déclenché
@@ -629,10 +647,12 @@ async function startRecording(isAutomatic = false) {
         
         console.log('Enregistrement démarré avec format:', mimeType);
         
+        // Marquer l'enregistrement comme en cours
+        isRecording = true;
+        
         // Mettre à jour les boutons (sauf si c'est un enregistrement automatique)
         if (!isAutomatic) {
-            recordBtn.disabled = true;
-            stopBtn.disabled = false;
+            recordBtn.textContent = "Arrêter";
             startBtn.disabled = true;
         }
         
@@ -642,8 +662,8 @@ async function startRecording(isAutomatic = false) {
         
         // Réactiver les boutons en cas d'erreur
         recordBtn.disabled = false;
-        stopBtn.disabled = true;
         startBtn.disabled = false;
+        isRecording = false;
     }
 }
 
@@ -657,8 +677,8 @@ function stopRecording() {
         console.error('Aucun enregistreur disponible');
         // Réinitialiser l'interface quand même
         recordBtn.disabled = false;
-        stopBtn.disabled = true;
         startBtn.disabled = false;
+        isRecording = false;
         return;
     }
     
@@ -679,18 +699,13 @@ function stopRecording() {
             });
         }
         
-        // Mettre à jour l'interface - même si l'enregistreur était déjà inactif
-        recordBtn.disabled = false;
-        stopBtn.disabled = true;
-        startBtn.disabled = false;
-        
     } catch (error) {
         console.error('Erreur lors de l\'arrêt de l\'enregistrement:', error);
         
         // En cas d'erreur, réinitialiser l'état de l'interface
         recordBtn.disabled = false;
-        stopBtn.disabled = true;
         startBtn.disabled = false;
+        isRecording = false;
         
         // Si l'analyseur est encore actif, l'arrêter
         if (soundAnalyzer) {
@@ -701,146 +716,4 @@ function stopRecording() {
             }
         }
     }
-}
-
-// Analyser l'enregistrement pour obtenir la note fondamentale
-function analyzeRecording(audioBlob) {
-    console.log('Analyse de l\'enregistrement...');
-    
-    // Créer un élément audio pour l'analyse
-    const audioElement = new Audio();
-    audioElement.src = URL.createObjectURL(audioBlob);
-    
-    // Créer un contexte audio pour l'analyse
-    const analyzerContext = new (window.AudioContext || window.webkitAudioContext)();
-    const analyzerSource = analyzerContext.createMediaElementSource(audioElement);
-    const analyzer = analyzerContext.createAnalyser();
-    
-    // Configurer l'analyseur
-    analyzer.fftSize = 16384; // Grande taille pour une meilleure précision
-    analyzer.smoothingTimeConstant = 0.3;
-    
-    // Connecter l'audio à l'analyseur
-    analyzerSource.connect(analyzer);
-    
-    // Tableau pour stocker les données de fréquence
-    const frequencyData = new Float32Array(analyzer.frequencyBinCount);
-    
-    // Variables pour l'analyse
-    let detectedPitch = 0;
-    let detectedVolume = 0;
-    let sampleCount = 0;
-    
-    // Fonction pour analyser le pitch
-    const detectPitch = () => {
-        // Obtenir les données fréquentielles
-        analyzer.getFloatFrequencyData(frequencyData);
-        
-        // Trouver le pic maximal (fréquence fondamentale)
-        let maxValue = -Infinity;
-        let maxIndex = 0;
-        
-        // Omettre les très basses fréquences (< 75Hz)
-        const startIndex = Math.floor(75 * analyzer.fftSize / analyzerContext.sampleRate);
-        
-        for (let i = startIndex; i < frequencyData.length; i++) {
-            if (frequencyData[i] > maxValue) {
-                maxValue = frequencyData[i];
-                maxIndex = i;
-            }
-        }
-        
-        // Convertir l'index en fréquence
-        const frequency = maxIndex * analyzerContext.sampleRate / analyzer.fftSize;
-        
-        // Seuil de volume pour éviter les bruits de fond
-        const volumeThreshold = -80; // dB
-        
-        if (maxValue > volumeThreshold) {
-            detectedPitch += frequency;
-            detectedVolume += maxValue;
-            sampleCount++;
-        }
-    };
-    
-    // Lire l'audio et collecter des données
-    audioElement.onloadedmetadata = () => {
-        // Réinitialiser les variables d'analyse
-        detectedPitch = 0;
-        detectedVolume = 0;
-        sampleCount = 0;
-        
-        // Configurer une minuterie pour l'analyse
-        const analysisInterval = setInterval(() => {
-            detectPitch();
-        }, 50); // Analyser toutes les 50ms
-        
-        // Lire l'audio
-        audioElement.play();
-        
-        // Arrêter l'analyse à la fin de l'audio
-        audioElement.onended = () => {
-            clearInterval(analysisInterval);
-            
-            // Calculer les moyennes
-            const avgPitch = sampleCount > 0 ? detectedPitch / sampleCount : 0;
-            const avgVolume = sampleCount > 0 ? detectedVolume / sampleCount : 0;
-            
-            // Trouver la note la plus proche
-            const closestNote = findClosestNote(avgPitch);
-            
-            // Calculer la différence en cents
-            const centsDiff = calculateCents(avgPitch, closestNote.frequency);
-            
-            // Déterminer si la note est correcte
-            const targetNote = currentNote;
-            const centsDiffToTarget = calculateCents(avgPitch, targetNote.frequency);
-            const isCorrect = Math.abs(centsDiffToTarget) < 50; // Marge de 50 cents (demi-ton)
-            
-            // Mettre à jour l'affichage de l'analyse
-            pitchAnalysisEl.innerHTML = `
-                <div style="margin-bottom: 15px;">
-                    <p style="font-weight: bold; font-size: 1.1rem;">
-                        Fréquence détectée: ${Math.round(avgPitch)} Hz
-                    </p>
-                    <p>
-                        Note la plus proche: 
-                        <span style="font-weight: bold;">${closestNote.name}</span> 
-                        (${Math.round(closestNote.frequency)} Hz)
-                    </p>
-                    <p>
-                        Différence avec la note cible: 
-                        <span style="font-weight: bold; color: ${isCorrect ? 'green' : 'red'};">
-                            ${Math.abs(centsDiffToTarget.toFixed(0))} cents 
-                            ${centsDiffToTarget > 0 ? 'au-dessus' : 'en dessous'}
-                        </span>
-                    </p>
-                    <p>
-                        Précision: 
-                        <span style="font-weight: bold; color: ${isCorrect ? 'green' : 'red'};">
-                            ${isCorrect ? 'Bonne' : 'À améliorer'}
-                        </span>
-                    </p>
-                </div>
-                <div>
-                    <p style="font-style: italic; color: #666;">
-                        ${
-                            isCorrect 
-                            ? 'Excellent ! Vous avez produit la note avec précision.' 
-                            : `Conseil: Essayez d'ajuster votre voix ${centsDiffToTarget > 0 ? 'plus bas' : 'plus haut'} pour atteindre la note cible.`
-                        }
-                    </p>
-                </div>
-            `;
-            
-            // Mettre à jour la notation musicale avec la note détectée
-            drawMusicNotation(currentNote, avgPitch);
-            
-            // Déconnecter le contexte audio
-            analyzerSource.disconnect();
-            
-            // Fermer le contexte d'analyse
-            analyzerContext.close();
-        };
-    };
 }
