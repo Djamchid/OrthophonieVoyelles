@@ -555,28 +555,190 @@ async function startRecording(isAutomatic = false) {
         startBtn.disabled = false;
     }
 }
+// Ajoutez ceci à la fin de votre fichier js-file.js
+
 // Arrêter l'enregistrement
 function stopRecording() {
-    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
-        console.warn('Aucun enregistrement en cours');
+    // Vérifier si l'enregistreur est actif
+    if (!mediaRecorder) {
+        console.error('Aucun enregistreur disponible');
         return;
     }
     
-    console.log('Arrêt de l\'enregistrement');
-    
-    // Arrêter le mediaRecorder
-    mediaRecorder.stop();
-    
-    // Arrêter les pistes audio du stream
-    if (audioStream) {
-        audioStream.getTracks().forEach(track => {
-            track.stop();
-        });
-        audioStream = null;
+    if (mediaRecorder.state === 'inactive') {
+        console.warn('Enregistreur déjà inactif');
+        return;
     }
     
-    // Mettre à jour les boutons
-    recordBtn.disabled = false;
-    stopBtn.disabled = true;
-    startBtn.disabled = false;
+    console.log('Arrêt de l\'enregistrement...');
+    
+    try {
+        // Arrêter le MediaRecorder
+        mediaRecorder.stop();
+        
+        // Arrêter les pistes du flux audio
+        if (audioStream) {
+            audioStream.getTracks().forEach(track => {
+                track.stop();
+            });
+        }
+        
+        // Mettre à jour l'interface
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        
+        // Réactiver le bouton de démarrage
+        startBtn.disabled = false;
+        
+        console.log('Enregistrement arrêté avec succès');
+    } catch (error) {
+        console.error('Erreur lors de l\'arrêt de l\'enregistrement:', error);
+        
+        // En cas d'erreur, réinitialiser l'état de l'interface
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
+        
+        // Si l'analyseur est encore actif, l'arrêter
+        if (soundAnalyzer) {
+            try {
+                soundAnalyzer.stopAudio();
+            } catch (e) {
+                console.error('Erreur lors de l\'arrêt de l\'analyseur:', e);
+            }
+        }
+    }
+}
+
+// Analyser l'enregistrement pour obtenir la note fondamentale
+function analyzeRecording(audioBlob) {
+    console.log('Analyse de l\'enregistrement...');
+    
+    // Créer un élément audio pour l'analyse
+    const audioElement = new Audio();
+    audioElement.src = URL.createObjectURL(audioBlob);
+    
+    // Créer un contexte audio pour l'analyse
+    const analyzerContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyzerSource = analyzerContext.createMediaElementSource(audioElement);
+    const analyzer = analyzerContext.createAnalyser();
+    
+    // Configurer l'analyseur
+    analyzer.fftSize = 16384; // Grande taille pour une meilleure précision
+    analyzer.smoothingTimeConstant = 0.3;
+    
+    // Connecter l'audio à l'analyseur
+    analyzerSource.connect(analyzer);
+    
+    // Tableau pour stocker les données de fréquence
+    const frequencyData = new Float32Array(analyzer.frequencyBinCount);
+    
+    // Variables pour l'analyse
+    let detectedPitch = 0;
+    let detectedVolume = 0;
+    let sampleCount = 0;
+    
+    // Fonction pour analyser le pitch
+    const detectPitch = () => {
+        // Obtenir les données fréquentielles
+        analyzer.getFloatFrequencyData(frequencyData);
+        
+        // Trouver le pic maximal (fréquence fondamentale)
+        let maxValue = -Infinity;
+        let maxIndex = 0;
+        
+        // Omettre les très basses fréquences (< 75Hz)
+        const startIndex = Math.floor(75 * analyzer.fftSize / analyzerContext.sampleRate);
+        
+        for (let i = startIndex; i < frequencyData.length; i++) {
+            if (frequencyData[i] > maxValue) {
+                maxValue = frequencyData[i];
+                maxIndex = i;
+            }
+        }
+        
+        // Convertir l'index en fréquence
+        const frequency = maxIndex * analyzerContext.sampleRate / analyzer.fftSize;
+        
+        // Ignorer les valeurs trop faibles (silence)
+        if (maxValue > -70) {
+            detectedPitch += frequency;
+            detectedVolume += maxValue + 100; // Convertir dB en valeur positive
+            sampleCount++;
+        }
+        
+        // Continuer l'analyse tant que l'audio est en cours de lecture
+        if (!audioElement.ended && !audioElement.paused) {
+            requestAnimationFrame(detectPitch);
+        } else {
+            // Finaliser l'analyse
+            if (sampleCount > 0) {
+                // Calculer les moyennes
+                const averagePitch = detectedPitch / sampleCount;
+                const averageVolume = detectedVolume / sampleCount;
+                
+                // Trouver la note la plus proche
+                const closestNote = findClosestNote(averagePitch);
+                
+                // Calculer la différence en cents
+                const centsDiff = calculateCents(averagePitch, closestNote.frequency);
+                
+                // Comparer avec la note cible
+                const targetCentsDiff = calculateCents(averagePitch, currentNote.frequency);
+                
+                // Mettre à jour l'affichage de l'analyse
+                pitchAnalysisEl.innerHTML = `
+                    <div style="margin-bottom: 10px;">
+                        <strong>Fréquence détectée:</strong> ${Math.round(averagePitch)} Hz
+                        <br>
+                        <strong>Note détectée:</strong> ${closestNote.name} (${Math.round(closestNote.frequency)} Hz)
+                        <br>
+                        <strong>Différence avec la note cible:</strong> ${Math.abs(Math.round(targetCentsDiff))} cents 
+                        ${targetCentsDiff > 0 ? 'au-dessus' : 'en dessous'}
+                    </div>
+                    
+                    <div style="margin-top: 15px; padding: 10px; background-color: ${Math.abs(targetCentsDiff) < 50 ? '#c8e6c9' : '#ffcdd2'}; border-radius: 5px;">
+                        <strong>Résultat:</strong> 
+                        ${Math.abs(targetCentsDiff) < 25 
+                            ? 'Excellent! Votre note est très précise.' 
+                            : Math.abs(targetCentsDiff) < 50 
+                                ? 'Bien! Votre note est assez proche.' 
+                                : Math.abs(targetCentsDiff) < 100 
+                                    ? 'À améliorer. Votre note est un peu éloignée.' 
+                                    : 'À retravailler. Votre note est éloignée de la cible.'}
+                    </div>
+                `;
+                
+                // Mettre à jour la notation musicale pour afficher la note détectée
+                drawMusicNotation(currentNote, averagePitch);
+                
+            } else {
+                pitchAnalysisEl.innerHTML = `
+                    <div style="color: #e63946;">
+                        <strong>Aucun son détecté.</strong> Veuillez réessayer l'enregistrement.
+                    </div>
+                `;
+            }
+            
+            // Nettoyer
+            analyzerSource.disconnect();
+            analyzerContext.close();
+        }
+    };
+    
+    // Commencer l'analyse lorsque l'audio est prêt
+    audioElement.addEventListener('canplay', () => {
+        audioElement.play();
+        detectPitch();
+    });
+    
+    // En cas d'erreur
+    audioElement.addEventListener('error', (e) => {
+        console.error('Erreur lors de la lecture de l\'audio:', e);
+        pitchAnalysisEl.innerHTML = `
+            <div style="color: #e63946;">
+                <strong>Erreur lors de l'analyse.</strong> Veuillez réessayer l'enregistrement.
+            </div>
+        `;
+    });
 }
