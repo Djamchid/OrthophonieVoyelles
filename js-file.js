@@ -49,6 +49,15 @@ const scoreContainerEl = document.getElementById('score-container');
 const audioPlayerContainerEl = document.getElementById('audio-player-container');
 const pitchAnalysisEl = document.getElementById('pitch-analysis');
 
+// Fréquence range sliders
+let minFrequency = 150;
+let maxFrequency = 600;
+const minFreqSlider = document.getElementById('min-freq-slider');
+const maxFreqSlider = document.getElementById('min-max-freq-slider');
+const minFreqDisplay = document.getElementById('min-freq');
+const maxFreqDisplay = document.getElementById('max-freq');
+const availableNotesCount = document.getElementById('available-notes-count');
+
 // Variables globales
 let currentVowel = 'o';
 let currentNote = { name: 'mi médium', frequency: 329.63, notation: 'E4' };
@@ -92,6 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
     recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
     
+    // Initialize the frequency range sliders
+    minFreqSlider.addEventListener('input', updateFrequencyRange);
+    maxFreqSlider.addEventListener('input', updateFrequencyRange);
+    
+    // Update initial available notes count
+    updateAvailableNotesCount();
+    
     // S'assurer que les boutons ont le bon état initial
     recordBtn.disabled = false;
     stopBtn.disabled = true;
@@ -99,15 +115,64 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Application initialisée, boutons configurés');
 });
 
+// Update frequency range based on slider values
+function updateFrequencyRange() {
+    // Ensure min can't go above max
+    if (parseInt(minFreqSlider.value) > parseInt(maxFreqSlider.value)) {
+        minFreqSlider.value = maxFreqSlider.value;
+    }
+    
+    // Ensure max can't go below min
+    if (parseInt(maxFreqSlider.value) < parseInt(minFreqSlider.value)) {
+        maxFreqSlider.value = minFreqSlider.value;
+    }
+    
+    // Update the stored values
+    minFrequency = parseInt(minFreqSlider.value);
+    maxFrequency = parseInt(maxFreqSlider.value);
+    
+    // Update the display
+    minFreqDisplay.textContent = `${minFrequency} Hz`;
+    maxFreqDisplay.textContent = `${maxFrequency} Hz`;
+    
+    // Update available notes count
+    updateAvailableNotesCount();
+}
+
+// Update the count of available notes based on current frequency range
+function updateAvailableNotesCount() {
+    const availableNotes = notes.filter(note => 
+        note.frequency >= minFrequency && note.frequency <= maxFrequency
+    );
+    
+    availableNotesCount.textContent = availableNotes.length;
+    
+    // Disable the generate button if no notes are available
+    if (availableNotes.length === 0) {
+        generateBtn.disabled = true;
+        generateBtn.title = "Aucune note disponible dans cette plage de fréquences";
+    } else {
+        generateBtn.disabled = false;
+        generateBtn.title = "";
+    }
+}
+
 // Générer un nouvel exercice
 function generateExercise() {
     // Sélectionner une voyelle aléatoire
     const randomVowelIndex = Math.floor(Math.random() * vowels.length);
     currentVowel = vowels[randomVowelIndex];
     
-    // Sélectionner une note aléatoire dans la plage 90-880Hz
-    // On filtre les notes qui sont dans cette plage
-    const notesInRange = notes.filter(note => note.frequency >= 90 && note.frequency <= 880);
+    // Sélectionner une note aléatoire dans la plage définie par les sliders
+    const notesInRange = notes.filter(note => 
+        note.frequency >= minFrequency && note.frequency <= maxFrequency
+    );
+    
+    if (notesInRange.length === 0) {
+        alert("Aucune note disponible dans cette plage de fréquences. Veuillez ajuster les curseurs.");
+        return;
+    }
+    
     const randomNoteIndex = Math.floor(Math.random() * notesInRange.length);
     currentNote = notesInRange[randomNoteIndex];
     
@@ -679,4 +744,96 @@ function analyzeRecording(audioBlob) {
         }
         
         // Convertir l'index en fréquence
-        const
+        const frequency = maxIndex * analyzerContext.sampleRate / analyzer.fftSize;
+        
+        // Seuil de volume pour éviter les bruits de fond
+        const volumeThreshold = -80; // dB
+        
+        if (maxValue > volumeThreshold) {
+            detectedPitch += frequency;
+            detectedVolume += maxValue;
+            sampleCount++;
+        }
+    };
+    
+    // Lire l'audio et collecter des données
+    audioElement.onloadedmetadata = () => {
+        // Réinitialiser les variables d'analyse
+        detectedPitch = 0;
+        detectedVolume = 0;
+        sampleCount = 0;
+        
+        // Configurer une minuterie pour l'analyse
+        const analysisInterval = setInterval(() => {
+            detectPitch();
+        }, 50); // Analyser toutes les 50ms
+        
+        // Lire l'audio
+        audioElement.play();
+        
+        // Arrêter l'analyse à la fin de l'audio
+        audioElement.onended = () => {
+            clearInterval(analysisInterval);
+            
+            // Calculer les moyennes
+            const avgPitch = sampleCount > 0 ? detectedPitch / sampleCount : 0;
+            const avgVolume = sampleCount > 0 ? detectedVolume / sampleCount : 0;
+            
+            // Trouver la note la plus proche
+            const closestNote = findClosestNote(avgPitch);
+            
+            // Calculer la différence en cents
+            const centsDiff = calculateCents(avgPitch, closestNote.frequency);
+            
+            // Déterminer si la note est correcte
+            const targetNote = currentNote;
+            const centsDiffToTarget = calculateCents(avgPitch, targetNote.frequency);
+            const isCorrect = Math.abs(centsDiffToTarget) < 50; // Marge de 50 cents (demi-ton)
+            
+            // Mettre à jour l'affichage de l'analyse
+            pitchAnalysisEl.innerHTML = `
+                <div style="margin-bottom: 15px;">
+                    <p style="font-weight: bold; font-size: 1.1rem;">
+                        Fréquence détectée: ${Math.round(avgPitch)} Hz
+                    </p>
+                    <p>
+                        Note la plus proche: 
+                        <span style="font-weight: bold;">${closestNote.name}</span> 
+                        (${Math.round(closestNote.frequency)} Hz)
+                    </p>
+                    <p>
+                        Différence avec la note cible: 
+                        <span style="font-weight: bold; color: ${isCorrect ? 'green' : 'red'};">
+                            ${Math.abs(centsDiffToTarget.toFixed(0))} cents 
+                            ${centsDiffToTarget > 0 ? 'au-dessus' : 'en dessous'}
+                        </span>
+                    </p>
+                    <p>
+                        Précision: 
+                        <span style="font-weight: bold; color: ${isCorrect ? 'green' : 'red'};">
+                            ${isCorrect ? 'Bonne' : 'À améliorer'}
+                        </span>
+                    </p>
+                </div>
+                <div>
+                    <p style="font-style: italic; color: #666;">
+                        ${
+                            isCorrect 
+                            ? 'Excellent ! Vous avez produit la note avec précision.' 
+                            : `Conseil: Essayez d'ajuster votre voix ${centsDiffToTarget > 0 ? 'plus bas' : 'plus haut'} pour atteindre la note cible.`
+                        }
+                    </p>
+                </div>
+            `;
+            
+            // Mettre à jour la notation musicale avec la note détectée
+            drawMusicNotation(currentNote, avgPitch);
+            
+            // Déconnecter le contexte audio
+            analyzerSource.disconnect();
+            
+            // Fermer le contexte d'analyse
+            analyzerContext.close();
+        };
+    };
+}
