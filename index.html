@@ -11,6 +11,20 @@
         <h1>Exercice d'Orthophonie</h1>
         
         <div class="exercise-panel">
+            <div class="frequency-range">
+                <h2>Réglage de la plage de fréquences</h2>
+                <div class="range-display">
+                    <span id="min-freq">150 Hz</span>
+                    <span id="max-freq">600 Hz</span>
+                </div>
+                <div class="range-slider">
+                    <input type="range" id="min-freq-slider" min="80" max="880" value="150" class="slider">
+                    <input type="range" id="min-max-freq-slider" min="80" max="880" value="600" class="slider">
+                </div>
+                <div class="current-range">
+                    <p>Notes disponibles: <span id="available-notes-count">0</span></p>
+                </div>
+            </div>
             <div class="result-display">
                 <div class="vowel-display">
                     <h2>Voyelle:</h2>
@@ -28,22 +42,7 @@
                 <button id="start-btn">Démarrer exercice (10s)</button>
                 <div id="timer" class="timer">10</div>
             </div>
-            
-            <div class="frequency-range">
-                <h2>Réglage de la plage de fréquences</h2>
-                <div class="range-display">
-                    <span id="min-freq">150 Hz</span>
-                    <span id="max-freq">600 Hz</span>
-                </div>
-                <div class="range-slider">
-                    <input type="range" id="min-freq-slider" min="80" max="880" value="150" class="slider">
-                    <input type="range" id="min-max-freq-slider" min="80" max="880" value="600" class="slider">
-                </div>
-                <div class="current-range">
-                    <p>Notes disponibles: <span id="available-notes-count">0</span></p>
-                </div>
-            </div>
-            
+                        
             <div class="music-notation">
                 <h2>Représentation musicale</h2>
                 <div id="score-container">
