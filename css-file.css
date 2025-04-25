@@ -18,7 +18,7 @@
 
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    line-height: n.5;
+    line-height: 1.5;
     color: var(--text-color);
     background-color: #f9f9f9;
     padding: 20px;
@@ -138,6 +138,74 @@ button:disabled {
     margin: 0 15px;
 }
 
+/* Frequency Range Slider */
+.frequency-range {
+    margin: 20px 0;
+    padding: 20px;
+    background-color: var(--secondary-color);
+    border-radius: var(--border-radius);
+}
+
+.range-display {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.range-slider {
+    position: relative;
+    height: 40px;
+}
+
+.slider {
+    position: absolute;
+    width: 100%;
+    height: 5px;
+    background: var(--primary-color);
+    outline: none;
+    -webkit-appearance: none;
+    pointer-events: none;
+}
+
+.slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    cursor: pointer;
+    pointer-events: auto;
+    z-index: 10;
+}
+
+.slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--accent-color);
+    cursor: pointer;
+    pointer-events: auto;
+    z-index: 10;
+    border: none;
+}
+
+#min-freq-slider {
+    z-index: 1;
+}
+
+#min-max-freq-slider {
+    z-index: 2;
+}
+
+.current-range {
+    margin-top: 15px;
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text-light);
+}
+
 /* Notation musicale */
 .music-notation {
     margin: 20px 0;
@@ -200,6 +268,10 @@ button:disabled {
     .result {
         height: 60px;
         font-size: 2.5rem;
+    }
+    
+    .range-slider {
+        height: 60px;
     }
 }
 /* Ajoutez ces styles à la fin de votre fichier CSS existant */
