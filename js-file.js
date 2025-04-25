@@ -265,14 +265,13 @@ function drawMusicNotation(note, userFrequency = null) {
         const noteName = notation.charAt(0);
         const octave = parseInt(notation.charAt(1));
         
-        // Pour la clé de sol, les positions relatives sont (de bas en haut):
-        // E4(4ème ligne), G4(2ème ligne), B4(3ème ligne), D5(4ème ligne), F5(5ème ligne)
-        const baseOctave = 4; // Pour la clé de sol standard
+        // Mapping corrigé des positions des notes sur la portée en clé de sol
         const positions = {
-            'C': 9, 'D': 8, 'E': 7, 'F': 6, 'G': 5, 'A': 4, 'B': 3
+            'C': 10, 'D': 9, 'E': 8, 'F': 7, 'G': 6, 'A': 5, 'B': 4
         };
         
         // Calculer la position relative basée sur l'octave
+        const baseOctave = 4; // Pour la clé de sol standard
         const octaveDiff = octave - baseOctave;
         const posY = firstLineY + (positions[noteName] - 7 * octaveDiff) * lineSpacing / 2;
         
