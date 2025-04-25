@@ -89,7 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
         spectrogramCanvas: spectrogramCanvas,
         fftSize: 4096,
         minDecibels: -100,
-        maxDecibels: -30
+        maxDecibels: -30,
+        targetFrequency: currentNote.frequency  // Définir la fréquence cible initiale
     });
     
     // Initialiser l'affichage de la notation musicale
@@ -182,6 +183,11 @@ function generateExercise() {
     
     // Mettre à jour la notation musicale
     drawMusicNotation(currentNote);
+    
+    // Mettre à jour la fréquence cible dans l'analyseur de son
+    if (soundAnalyzer) {
+        soundAnalyzer.setTargetFrequency(currentNote.frequency);
+    }
     
     // Réinitialiser l'analyse
     pitchAnalysisEl.innerHTML = '';
@@ -541,7 +547,8 @@ async function startRecording(isAutomatic = false) {
             // Configurer l'analyseur pour mettre en évidence la fréquence cible
             soundAnalyzer.updateSettings({
                 minDecibels: -80,
-                maxDecibels: -20
+                maxDecibels: -20,
+                targetFrequency: currentNote.frequency  // Assurer que la fréquence cible est à jour
             });
             
             // Démarrer l'analyse en temps réel
