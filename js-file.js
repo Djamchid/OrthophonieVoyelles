@@ -333,7 +333,7 @@ function drawMusicNotation(note, userFrequency = null) {
         // Mapping corrigé des positions des notes sur la portée en clé de sol
         // Correction ici : C (do) doit être au-dessus de B (si), pas en-dessous
         const positions = {
-            'C': 12, 'D': 11, 'E': 10, 'F': 9, 'G': 8, 'A': 7, 'B': 6
+            'C': 10, 'D': 9, 'E': 8, 'F': 7, 'G': 6, 'A': 5, 'B': 4
         };
         
         // Calculer la position relative basée sur l'octave
