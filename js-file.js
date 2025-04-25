@@ -555,3 +555,28 @@ async function startRecording(isAutomatic = false) {
         startBtn.disabled = false;
     }
 }
+// Arrêter l'enregistrement
+function stopRecording() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        console.warn('Aucun enregistrement en cours');
+        return;
+    }
+    
+    console.log('Arrêt de l\'enregistrement');
+    
+    // Arrêter le mediaRecorder
+    mediaRecorder.stop();
+    
+    // Arrêter les pistes audio du stream
+    if (audioStream) {
+        audioStream.getTracks().forEach(track => {
+            track.stop();
+        });
+        audioStream = null;
+    }
+    
+    // Mettre à jour les boutons
+    recordBtn.disabled = false;
+    stopBtn.disabled = true;
+    startBtn.disabled = false;
+}
