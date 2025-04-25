@@ -11,6 +11,7 @@ class SoundAnalyzer {
      * @param {Number} options.fftSize - FFT size (must be power of 2)
      * @param {Number} options.minDecibels - Minimum decibel value
      * @param {Number} options.maxDecibels - Maximum decibel value
+     * @param {Boolean} options.verticalSpectrogram - Whether to display spectrogram vertically (default: true)
      */
     constructor(options) {
         // Set up canvas elements
@@ -36,6 +37,9 @@ class SoundAnalyzer {
         this.animationId = null;
         this.spectrogramOffset = 0;
         
+        // Spectrogram orientation (vertical by default)
+        this.verticalSpectrogram = options.verticalSpectrogram !== false;
+        
         // Set up canvas dimensions
         this.setupCanvas();
         
@@ -43,6 +47,147 @@ class SoundAnalyzer {
         this.demoOscillator = null;
         this.demoLfo = null;
         this.sweepLfo = null;
+    }
+    
+    /**
+     * Draw grid lines on the frequency canvas
+     * @param {CanvasRenderingContext2D} ctx - Canvas context
+     * @param {Number} width - Canvas width
+     * @param {Number} height - Canvas height
+     */
+    drawGrid(ctx, width, height) {
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        
+        // Vertical lines (frequency)
+        const frequencies = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+        frequencies.forEach(freq => {
+            const minLog = Math.log10(20);
+            const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050); // Nyquist frequency
+            
+            if (freq < 20 || freq > (this.audioContext ? (this.audioContext.sampleRate / 2) : 22050)) return;
+            
+            const xPos = (Math.log10(freq) - minLog) / (maxLog - minLog) * width;
+            
+            ctx.beginPath();
+            ctx.moveTo(xPos, 0);
+            ctx.lineTo(xPos, height);
+            ctx.stroke();
+            
+            // Add frequency label
+            ctx.fillStyle = '#666';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            let freqLabel = freq >= 1000 ? (freq / 1000) + 'k' : freq;
+            ctx.fillText(freqLabel, xPos, height - 5);
+        });
+        
+        // Highlight the 21Hz reference mark in cyan (demo mode)
+        if (this.demoOscillator) {
+            const refFreq = 21;
+            const minLog = Math.log10(20);
+            const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
+            const xPos = (Math.log10(Math.max(20, refFreq)) - minLog) / (maxLog - minLog) * width;
+            
+            ctx.strokeStyle = '#4FC3F7'; // Cyan color
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(xPos, 0);
+            ctx.lineTo(xPos, height);
+            ctx.stroke();
+            
+            ctx.fillStyle = '#4FC3F7';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('21', xPos, height - 5);
+        }
+        
+        // Horizontal lines (dB)
+        const minDb = this.analyser ? this.analyser.minDecibels : this.minDecibels;
+        const maxDb = this.analyser ? this.analyser.maxDecibels : this.maxDecibels;
+        const dbStep = 20;
+        
+        for (let db = maxDb; db >= minDb; db -= dbStep) {
+            const yPos = ((db - maxDb) / (minDb - maxDb)) * height;
+            
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, yPos);
+            ctx.lineTo(width, yPos);
+            ctx.stroke();
+            
+            // Add dB label
+            ctx.fillStyle = '#666';
+            ctx.font = '10px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(db + ' dB', 5, yPos - 3);
+        }
+    }
+    
+    /**
+     * Handle canvas hover for frequency display
+     * @param {MouseEvent} event - Mouse event
+     * @returns {Object} - Frequency and dB values at mouse position
+     */
+    handleCanvasHover(event) {
+        if (!this.analyser) return { frequency: 0, db: 0 };
+        
+        const rect = this.frequencyCanvas.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        
+        // Convert x position to frequency (logarithmic scale)
+        const xRatio = x / rect.width;
+        const minLog = Math.log10(20);  // 20Hz
+        const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
+        const freqLog = minLog + xRatio * (maxLog - minLog);
+        const frequency = Math.round(Math.pow(10, freqLog));
+        
+        // Convert y position to decibels
+        const yRatio = 1 - (y / rect.height);
+        const minDb = this.analyser ? this.analyser.minDecibels : this.minDecibels;
+        const maxDb = this.analyser ? this.analyser.maxDecibels : this.maxDecibels;
+        const db = Math.round(minDb + yRatio * (maxDb - minDb));
+        
+        return { frequency, db };
+    }
+    
+    /**
+     * Convert HSL color to RGB
+     * @param {Number} h - Hue [0-1]
+     * @param {Number} s - Saturation [0-1]
+     * @param {Number} l - Lightness [0-1]
+     * @returns {Array} - RGB values [r, g, b] in range [0-255]
+     */
+    hslToRgb(h, s, l) {
+        let r, g, b;
+        
+        if (s === 0) {
+            r = g = b = l;
+        } else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1;
+                if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q - p) * 6 * t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+                return p;
+            };
+            
+            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+            const p = 2 * l - q;
+            
+            r = hue2rgb(p, q, h + 1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h - 1/3);
+        }
+        
+        return [
+            Math.round(r * 255),
+            Math.round(g * 255),
+            Math.round(b * 255)
+        ];
     }
     
     /**
@@ -85,6 +230,12 @@ class SoundAnalyzer {
         if (settings.maxDecibels) {
             this.maxDecibels = settings.maxDecibels;
             this.analyser.maxDecibels = parseInt(settings.maxDecibels);
+        }
+        
+        if (settings.verticalSpectrogram !== undefined) {
+            this.verticalSpectrogram = settings.verticalSpectrogram;
+            // Reset the spectrogram when changing orientation
+            this.resetSpectrogram();
         }
     }
     
@@ -328,6 +479,7 @@ class SoundAnalyzer {
     drawFrequencyGraph(dataArray) {
         const width = this.frequencyCanvas.width;
         const height = this.frequencyCanvas.height;
+        const bufferLength = dataArray.length;
         
         // Clear canvas
         this.freqCtx.fillStyle = '#222';
@@ -335,14 +487,6 @@ class SoundAnalyzer {
         
         // Draw grid lines
         this.drawGrid(this.freqCtx, width, height);
-        
-        // Calculate bar width based on canvas width
-        const bufferLength = dataArray.length;
-        
-        // Draw frequency line for yellow (secondary) trace
-        this.freqCtx.beginPath();
-        this.freqCtx.strokeStyle = '#FFEB3B';
-        this.freqCtx.lineWidth = 1.5;
         
         // Generate some demo data for second trace if in demo mode
         const secondaryData = new Uint8Array(bufferLength);
@@ -359,6 +503,10 @@ class SoundAnalyzer {
         }
         
         // Draw second trace first (yellow line)
+        this.freqCtx.beginPath();
+        this.freqCtx.strokeStyle = '#FFEB3B';
+        this.freqCtx.lineWidth = 1.5;
+        
         for (let i = 0; i < bufferLength; i++) {
             // Log scale for x-axis (frequency)
             const freq = i * (this.audioContext ? this.audioContext.sampleRate : 44100) / (2 * bufferLength);
@@ -440,7 +588,7 @@ class SoundAnalyzer {
     }
     
     /**
-     * Draw the spectrogram (rotated 90 degrees counterclockwise)
+     * Draw the spectrogram
      * @param {Uint8Array} dataArray - Frequency data array from analyser
      */
     drawSpectrogram(dataArray) {
@@ -448,13 +596,13 @@ class SoundAnalyzer {
         const height = this.spectrogramCanvas.height;
         const bufferLength = dataArray.length;
         
-        // Create image data for a single row (not column)
+        // For vertical spectrogram (time flowing from top to bottom)
+        // Create image data for a single row
         const imageData = this.spectCtx.createImageData(width, 1);
         
-        // Fill image data for the current row
+        // Fill image data for current row - ensure low frequencies are on left, high on right
         for (let i = 0; i < width; i++) {
             // Map canvas x position to frequency bin (logarithmic)
-            // This ensures the x-axis matches the frequency canvas
             const xRatio = i / width;
             const minLog = Math.log10(20); // 20Hz
             const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
@@ -488,10 +636,10 @@ class SoundAnalyzer {
         // Add the row to the spectrogram at the current position
         this.spectCtx.putImageData(imageData, 0, this.spectrogramOffset);
         
-        // Increment row position (moving down)
+        // Increment row position (moving top to bottom)
         this.spectrogramOffset++;
         
-        // If we reach the bottom, scroll up
+        // If we reach the bottom edge, scroll up
         if (this.spectrogramOffset >= height) {
             // Shift existing spectrogram up
             this.spectCtx.drawImage(
@@ -501,151 +649,5 @@ class SoundAnalyzer {
             );
             this.spectrogramOffset = height - 1;
         }
-    }
-    
-    /**
-     * Draw grid lines on the frequency canvas
-     * @param {CanvasRenderingContext2D} ctx - Canvas context
-     * @param {Number} width - Canvas width
-     * @param {Number} height
-     /**
-     * Draw grid lines on the frequency canvas
-     * @param {CanvasRenderingContext2D} ctx - Canvas context
-     * @param {Number} width - Canvas width
-     * @param {Number} height - Canvas height
-     */
-    drawGrid(ctx, width, height) {
-        ctx.strokeStyle = '#333';
-        ctx.lineWidth = 1;
-        
-        // Vertical lines (frequency)
-        const frequencies = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-        frequencies.forEach(freq => {
-            const minLog = Math.log10(20);
-            const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050); // Nyquist frequency
-            
-            if (freq < 20 || freq > (this.audioContext ? (this.audioContext.sampleRate / 2) : 22050)) return;
-            
-            const xPos = (Math.log10(freq) - minLog) / (maxLog - minLog) * width;
-            
-            ctx.beginPath();
-            ctx.moveTo(xPos, 0);
-            ctx.lineTo(xPos, height);
-            ctx.stroke();
-            
-            // Add frequency label
-            ctx.fillStyle = '#666';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-            let freqLabel = freq >= 1000 ? (freq / 1000) + 'k' : freq;
-            ctx.fillText(freqLabel, xPos, height - 5);
-        });
-        
-        // Highlight the 21Hz reference mark in cyan (demo mode)
-        if (this.demoOscillator) {
-            const refFreq = 21;
-            const minLog = Math.log10(20);
-            const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
-            const xPos = (Math.log10(Math.max(20, refFreq)) - minLog) / (maxLog - minLog) * width;
-            
-            ctx.strokeStyle = '#4FC3F7'; // Cyan color
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(xPos, 0);
-            ctx.lineTo(xPos, height);
-            ctx.stroke();
-            
-            ctx.fillStyle = '#4FC3F7';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('21', xPos, height - 5);
-        }
-        
-        // Horizontal lines (dB)
-        const minDb = this.analyser ? this.analyser.minDecibels : this.minDecibels;
-        const maxDb = this.analyser ? this.analyser.maxDecibels : this.maxDecibels;
-        const dbStep = 20;
-        
-        for (let db = maxDb; db >= minDb; db -= dbStep) {
-            const yPos = ((db - maxDb) / (minDb - maxDb)) * height;
-            
-            ctx.strokeStyle = '#333';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(0, yPos);
-            ctx.lineTo(width, yPos);
-            ctx.stroke();
-            
-            // Add dB label
-            ctx.fillStyle = '#666';
-            ctx.font = '10px sans-serif';
-            ctx.textAlign = 'left';
-            ctx.fillText(db + ' dB', 5, yPos - 3);
-        }
-    }
-    
-    /**
-     * Handle canvas hover for frequency display
-     * @param {MouseEvent} event - Mouse event
-     * @returns {Object} - Frequency and dB values at mouse position
-     */
-    handleCanvasHover(event) {
-        if (!this.analyser) return { frequency: 0, db: 0 };
-        
-        const rect = this.frequencyCanvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        
-        // Convert x position to frequency (logarithmic scale)
-        const xRatio = x / rect.width;
-        const minLog = Math.log10(20);  // 20Hz
-        const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
-        const freqLog = minLog + xRatio * (maxLog - minLog);
-        const frequency = Math.round(Math.pow(10, freqLog));
-        
-        // Convert y position to decibels
-        const yRatio = 1 - (y / rect.height);
-        const minDb = this.analyser ? this.analyser.minDecibels : this.minDecibels;
-        const maxDb = this.analyser ? this.analyser.maxDecibels : this.maxDecibels;
-        const db = Math.round(minDb + yRatio * (maxDb - minDb));
-        
-        return { frequency, db };
-    }
-    
-    /**
-     * Convert HSL color to RGB
-     * @param {Number} h - Hue [0-1]
-     * @param {Number} s - Saturation [0-1]
-     * @param {Number} l - Lightness [0-1]
-     * @returns {Array} - RGB values [r, g, b] in range [0-255]
-     */
-    hslToRgb(h, s, l) {
-        let r, g, b;
-        
-        if (s === 0) {
-            r = g = b = l;
-        } else {
-            const hue2rgb = (p, q, t) => {
-                if (t < 0) t += 1;
-                if (t > 1) t -= 1;
-                if (t < 1/6) return p + (q - p) * 6 * t;
-                if (t < 1/2) return q;
-                if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-                return p;
-            };
-            
-            const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-            const p = 2 * l - q;
-            
-            r = hue2rgb(p, q, h + 1/3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h - 1/3);
-        }
-        
-        return [
-            Math.round(r * 255),
-            Math.round(g * 255),
-            Math.round(b * 255)
-        ];
     }
 }
