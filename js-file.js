@@ -56,21 +56,14 @@ let timerInterval;
 let mediaRecorder;
 let audioChunks = [];
 let audioStream;
-let analyser;
 let audioContext;
-let pitchDetectionInterval;
-let pitchCanvas;
-let pitchCanvasCtx;
-let isVisualizing = false;
+let soundAnalyzer; // Instance de SoundAnalyzer
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', () => {
-    // Initialiser le canvas de visualisation du pitch
-    pitchCanvas = document.getElementById('pitch-canvas');
-    pitchCanvasCtx = pitchCanvas.getContext('2d');
-    
-    // Initialiser l'affichage de la notation musicale
-    drawMusicNotation(currentNote);
+    // Initialiser l'analyseur de son avec les canvases
+    const frequencyCanvas = document.getElementById('frequency-canvas');
+    const spectrogramCanvas = document.getElementById('spectrogram-canvas');
     
     // Initialiser l'audioContext
     try {
@@ -81,14 +74,23 @@ document.addEventListener('DOMContentLoaded', () => {
         alert('Votre navigateur ne supporte pas les API audio nécessaires. Veuillez utiliser un navigateur récent comme Chrome ou Firefox.');
     }
     
+    // Configurer l'analyseur de son
+    soundAnalyzer = new SoundAnalyzer({
+        frequencyCanvas: frequencyCanvas,
+        spectrogramCanvas: spectrogramCanvas,
+        fftSize: 4096,
+        minDecibels: -100,
+        maxDecibels: -30
+    });
+    
+    // Initialiser l'affichage de la notation musicale
+    drawMusicNotation(currentNote);
+    
     // Événements
     generateBtn.addEventListener('click', generateExercise);
     startBtn.addEventListener('click', startExercise);
     recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
-    
-    // Dessiner le canvas de visualisation initial
-    drawEmptyPitchCanvas();
 });
 
 // Générer un nouvel exercice
@@ -149,11 +151,6 @@ function startExercise() {
         timerInterval = setInterval(() => {
             timeLeft--;
             timerEl.textContent = timeLeft;
-            
-            // Visualiser le pitch en temps réel
-            if (audioStream && analyser) {
-                visualizePitch();
-            }
             
             if (timeLeft <= 0) {
                 clearInterval(timerInterval);
@@ -456,7 +453,6 @@ function calculateCents(f1, f2) {
 }
 
 // Démarrer l'enregistrement
-// Démarrer l'enregistrement
 async function startRecording(isAutomatic = false) {
     try {
         // Demander l'accès au microphone
@@ -464,8 +460,22 @@ async function startRecording(isAutomatic = false) {
             audio: true // Simplifier pour réduire les erreurs potentielles
         });
         
-        // Configurer l'analyseur audio
-        setupAudioAnalysis(audioStream);
+        // Démarrer l'analyseur de son avec le flux audio du microphone
+        if (soundAnalyzer) {
+            // Si l'audioContext est suspendu, le reprendre
+            if (audioContext.state === 'suspended') {
+                audioContext.resume();
+            }
+            
+            // Configurer l'analyseur pour mettre en évidence la fréquence cible
+            soundAnalyzer.updateSettings({
+                minDecibels: -80,
+                maxDecibels: -20
+            });
+            
+            // Démarrer l'analyse en temps réel
+            await soundAnalyzer.startMicrophoneAudio();
+        }
         
         // Configurer l'enregistreur avec détection du format MIME
         let mimeType = 'audio/webm';
@@ -494,10 +504,9 @@ async function startRecording(isAutomatic = false) {
         mediaRecorder.addEventListener('stop', () => {
             console.log('Enregistrement arrêté, chunks:', audioChunks.length);
             
-            // Arrêter la visualisation en temps réel
-            isVisualizing = false;
-            if (pitchDetectionInterval) {
-                clearInterval(pitchDetectionInterval);
+            // Arrêter l'analyseur de son
+            if (soundAnalyzer) {
+                soundAnalyzer.stopAudio();
             }
             
             if (audioChunks.length === 0) {
@@ -522,19 +531,12 @@ async function startRecording(isAutomatic = false) {
             
             // Analyser l'enregistrement
             analyzeRecording(audioBlob);
-            
-            // Dessiner un canvas vide
-            drawEmptyPitchCanvas();
         });
         
         // Démarrer l'enregistrement avec un timeslice pour s'assurer que dataavailable est déclenché
         mediaRecorder.start(1000); // Déclencher dataavailable toutes les secondes
         
         console.log('Enregistrement démarré avec format:', mimeType);
-        
-        // Démarrer la visualisation en temps réel
-        isVisualizing = true;
-        startRealtimeVisualization();
         
         // Mettre à jour les boutons (sauf si c'est un enregistrement automatique)
         if (!isAutomatic) {
@@ -553,688 +555,3 @@ async function startRecording(isAutomatic = false) {
         startBtn.disabled = false;
     }
 }
-// Arrêter l'enregistrement
-function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-        mediaRecorder.stop();
-        
-        // Arrêter tous les tracks audio
-        if (audioStream) {
-            audioStream.getTracks().forEach(track => track.stop());
-        }
-        
-        // Arrêter la visualisation en temps réel
-        isVisualizing = false;
-        if (pitchDetectionInterval) {
-            clearInterval(pitchDetectionInterval);
-        }
-        
-        // Mettre à jour les boutons
-        recordBtn.disabled = false;
-        stopBtn.disabled = true;
-        startBtn.disabled = false;
-        
-        // Dessiner un canvas vide pour la visualisation
-        drawEmptyPitchCanvas();
-    }
-}
-
-// Configurer l'analyse audio en temps réel
-function setupAudioAnalysis(stream) {
-    if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    
-    // Si l'audioContext est suspendu, le reprendre
-    if (audioContext.state === 'suspended') {
-        audioContext.resume();
-    }
-    
-    // Créer un analyseur avec une bonne résolution fréquentielle
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 4096; // Taille FFT plus grande pour une meilleure résolution de fréquence
-    analyser.smoothingTimeConstant = 0.8; // Lissage temporel pour réduire le bruit
-    
-    // Créer une source audio à partir du stream
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser);
-    
-    // Ne pas connecter à destination pour éviter l'écho
-    // analyser.connect(audioContext.destination);
-}
-
-// Démarrer la visualisation en temps réel
-function startRealtimeVisualization() {
-    if (pitchDetectionInterval) {
-        clearInterval(pitchDetectionInterval);
-    }
-    
-    // Mettre à jour toutes les 100ms
-    pitchDetectionInterval = setInterval(() => {
-        if (isVisualizing && analyser) {
-            visualizePitch();
-        } else {
-            clearInterval(pitchDetectionInterval);
-        }
-    }, 100);
-}
-
-// Visualiser la hauteur en temps réel
-function visualizePitch() {
-    // Obtenir les données audio
-    const bufferLength = analyser.fftSize;
-    const timeData = new Float32Array(bufferLength);
-    analyser.getFloatTimeDomainData(timeData);
-    
-    // Calculer la fréquence fondamentale à l'aide de l'autocorrélation
-    const frequency = detectPitchFromBuffer(timeData, audioContext.sampleRate);
-    
-    // Dessiner la visualisation
-    drawPitchVisualization(frequency);
-}
-
-// Détecter la hauteur à partir d'un buffer audio
-function detectPitchFromBuffer(buffer, sampleRate) {
-    // Algorithme d'autocorrélation simplifié
-    const bufferSize = buffer.length;
-    
-    // Vérifier si le signal est assez fort
-    let rms = 0;
-    for (let i = 0; i < bufferSize; i++) {
-        rms += buffer[i] * buffer[i];
-    }
-    rms = Math.sqrt(rms / bufferSize);
-    
-    // Si le signal est trop faible, retourner 0
-    if (rms < 0.01) return 0;
-    
-    // Appliquer une fenêtre de Hann pour réduire les artefacts
-    const hannWindow = new Float32Array(bufferSize);
-    for (let i = 0; i < bufferSize; i++) {
-        hannWindow[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / (bufferSize - 1)));
-        buffer[i] *= hannWindow[i];
-    }
-    
-    // Calculer l'autocorrélation
-    const correlation = new Float32Array(bufferSize);
-    for (let lag = 0; lag < bufferSize; lag++) {
-        let sum = 0;
-        for (let i = 0; i < bufferSize - lag; i++) {
-            sum += buffer[i] * buffer[i + lag];
-        }
-        correlation[lag] = sum;
-    }
-    
-    // Trouver les pics dans l'autocorrélation
-    // Ignorer les premiers échantillons (fréquences trop élevées)
-    const minPeriod = Math.floor(sampleRate / 1000); // ~1000 Hz max
-    const maxPeriod = Math.floor(sampleRate / 80);  // ~80 Hz min
-    
-    let maxCorrelation = 0;
-    let period = 0;
-    
-    for (let i = minPeriod; i < maxPeriod; i++) {
-        if (correlation[i] > maxCorrelation) {
-            maxCorrelation = correlation[i];
-            period = i;
-        }
-    }
-    
-    // Si aucun pic n'est trouvé, retourner 0
-    if (period === 0) return 0;
-    
-    // Affiner la période par interpolation parabolique
-    const y1 = correlation[period - 1];
-    const y2 = correlation[period];
-    const y3 = correlation[period + 1];
-    
-    const refinedPeriod = period + 0.5 * (y1 - y3) / (y1 - 2 * y2 + y3);
-    
-    // Convertir la période en fréquence
-    const frequency = sampleRate / refinedPeriod;
-    
-    return frequency;
-}
-
-// Dessiner la visualisation du pitch
-// Visualiser la hauteur en temps réel avec des améliorations
-function drawPitchVisualization(detectedFrequency) {
-    // Effacer le canvas
-    pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
-    
-    // Dessiner l'arrière-plan avec un dégradé
-    const gradient = pitchCanvasCtx.createLinearGradient(0, 0, 0, pitchCanvas.height);
-    gradient.addColorStop(0, '#f8f9fa');
-    gradient.addColorStop(1, '#e9ecef');
-    pitchCanvasCtx.fillStyle = gradient;
-    pitchCanvasCtx.fillRect(0, 0, pitchCanvas.width, pitchCanvas.height);
-    
-    // Si aucune fréquence n'est détectée, dessiner un canvas avec indication
-    if (!detectedFrequency || detectedFrequency === 0) {
-        pitchCanvasCtx.fillStyle = '#6c757d';
-        pitchCanvasCtx.font = '16px sans-serif';
-        pitchCanvasCtx.textAlign = 'center';
-        pitchCanvasCtx.fillText("Aucun son détecté", pitchCanvas.width / 2, pitchCanvas.height / 2);
-        
-        // Ajouter une animation pour indiquer l'attente
-        const radius = 30;
-        const centerX = pitchCanvas.width / 2;
-        const centerY = pitchCanvas.height / 2 + 30;
-        const angle = (Date.now() / 500) % (Math.PI * 2);
-        
-        pitchCanvasCtx.strokeStyle = '#4a6da7';
-        pitchCanvasCtx.lineWidth = 3;
-        pitchCanvasCtx.beginPath();
-        pitchCanvasCtx.arc(centerX, centerY, radius, 0, angle);
-        pitchCanvasCtx.stroke();
-        
-        // Demander au navigateur d'appeler cette fonction à nouveau au prochain rafraîchissement
-        requestAnimationFrame(() => drawPitchVisualization(0));
-        return;
-    }
-    
-    // Fréquence cible
-    const targetFrequency = currentNote.frequency;
-    
-    // Variables pour la visualisation
-    const minFreq = 80;
-    const maxFreq = 1000;
-    const canvasHeight = pitchCanvas.height;
-    const canvasWidth = pitchCanvas.width;
-    
-    // Fonction pour convertir une fréquence en position Y
-    const freqToY = (freq) => {
-        if (freq < minFreq) freq = minFreq;
-        if (freq > maxFreq) freq = maxFreq;
-        
-        const logMinFreq = Math.log(minFreq);
-        const logMaxFreq = Math.log(maxFreq);
-        const logFreq = Math.log(freq);
-        
-        // Inverser Y car 0 est en haut dans un canvas
-        return canvasHeight - (canvasHeight * (logFreq - logMinFreq) / (logMaxFreq - logMinFreq));
-    };
-    
-    // Dessiner des lignes horizontales pour les notes de référence avec un style amélioré
-    pitchCanvasCtx.strokeStyle = '#dee2e6';
-    pitchCanvasCtx.lineWidth = 1;
-    
-    for (const note of notes) {
-        const y = freqToY(note.frequency);
-        
-        if (y >= 0 && y <= canvasHeight) {
-            pitchCanvasCtx.beginPath();
-            
-            // Dessiner une ligne pointillée pour les notes
-            pitchCanvasCtx.setLineDash([5, 3]);
-            pitchCanvasCtx.moveTo(0, y);
-            pitchCanvasCtx.lineTo(canvasWidth, y);
-            pitchCanvasCtx.stroke();
-            pitchCanvasCtx.setLineDash([]);
-            
-            // Ajouter le nom de la note avec un style amélioré
-            if (note.frequency >= minFreq && note.frequency <= maxFreq) {
-                pitchCanvasCtx.fillStyle = '#6c757d';
-                pitchCanvasCtx.font = '11px sans-serif';
-                
-                // Ajouter un fond pour une meilleure lisibilité
-                const textWidth = pitchCanvasCtx.measureText(note.name).width;
-                pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-                pitchCanvasCtx.fillRect(3, y - 12, textWidth + 6, 15);
-                
-                pitchCanvasCtx.fillStyle = '#495057';
-                pitchCanvasCtx.textAlign = 'left';
-                pitchCanvasCtx.fillText(note.name, 5, y - 2);
-            }
-        }
-    }
-    
-    // Dessiner la ligne de fréquence cible avec plus d'importance
-    const targetY = freqToY(targetFrequency);
-    
-    // Dessiner d'abord une ligne plus large
-    pitchCanvasCtx.strokeStyle = 'rgba(74, 109, 167, 0.3)';
-    pitchCanvasCtx.lineWidth = 8;
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.moveTo(0, targetY);
-    pitchCanvasCtx.lineTo(canvasWidth, targetY);
-    pitchCanvasCtx.stroke();
-    
-    // Ensuite la ligne principale
-    pitchCanvasCtx.strokeStyle = '#4a6da7';
-    pitchCanvasCtx.lineWidth = 2;
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.moveTo(0, targetY);
-    pitchCanvasCtx.lineTo(canvasWidth, targetY);
-    pitchCanvasCtx.stroke();
-    
-    // Mettre en évidence la note cible
-    pitchCanvasCtx.fillStyle = 'rgba(74, 109, 167, 0.8)';
-    pitchCanvasCtx.font = 'bold 12px sans-serif';
-    pitchCanvasCtx.textAlign = 'left';
-    pitchCanvasCtx.fillText(`${currentNote.name} (${Math.round(targetFrequency)} Hz)`, canvasWidth - 150, targetY - 5);
-    
-    // Ajouter une zone de tolérance avec un dégradé pour une meilleure visualisation
-    const tolerance = 25; // cents
-    const upperFreq = targetFrequency * Math.pow(2, tolerance / 1200);
-    const lowerFreq = targetFrequency * Math.pow(2, -tolerance / 1200);
-    
-    const upperY = freqToY(upperFreq);
-    const lowerY = freqToY(lowerFreq);
-    
-    // Créer un dégradé pour la zone de tolérance
-    const toleranceGradient = pitchCanvasCtx.createLinearGradient(0, upperY, 0, lowerY);
-    toleranceGradient.addColorStop(0, 'rgba(74, 109, 167, 0.05)');
-    toleranceGradient.addColorStop(0.5, 'rgba(74, 109, 167, 0.2)');
-    toleranceGradient.addColorStop(1, 'rgba(74, 109, 167, 0.05)');
-    
-    pitchCanvasCtx.fillStyle = toleranceGradient;
-    pitchCanvasCtx.fillRect(0, upperY, canvasWidth, lowerY - upperY);
-    
-    // Ajouter des lignes pour marquer les limites de tolérance
-    pitchCanvasCtx.strokeStyle = 'rgba(74, 109, 167, 0.4)';
-    pitchCanvasCtx.lineWidth = 1;
-    pitchCanvasCtx.setLineDash([3, 3]);
-    
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.moveTo(0, upperY);
-    pitchCanvasCtx.lineTo(canvasWidth, upperY);
-    pitchCanvasCtx.stroke();
-    
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.moveTo(0, lowerY);
-    pitchCanvasCtx.lineTo(canvasWidth, lowerY);
-    pitchCanvasCtx.stroke();
-    
-    pitchCanvasCtx.setLineDash([]);
-    
-    // Calculer la différence en cents
-    const centsDiff = 1200 * Math.log2(detectedFrequency / targetFrequency);
-    const inTolerance = Math.abs(centsDiff) <= tolerance;
-    
-    // Créer un historique des fréquences détectées pour tracer une ligne
-    if (!window.frequencyHistory) {
-        window.frequencyHistory = [];
-    }
-    
-    // Ajouter la fréquence actuelle à l'historique et limiter la taille
-    window.frequencyHistory.push({
-        frequency: detectedFrequency,
-        timestamp: Date.now()
-    });
-    
-    // Garder seulement les dernières 3 secondes (ou environ 30 points avec un rafraîchissement de 100ms)
-    const currentTime = Date.now();
-    window.frequencyHistory = window.frequencyHistory.filter(
-        item => currentTime - item.timestamp < 3000
-    );
-    
-    // Dessiner l'historique des fréquences comme une ligne continue
-    if (window.frequencyHistory.length > 1) {
-        pitchCanvasCtx.strokeStyle = inTolerance ? '#4caf50' : '#e63946';
-        pitchCanvasCtx.lineWidth = 3;
-        pitchCanvasCtx.lineJoin = 'round';
-        pitchCanvasCtx.beginPath();
-        
-        // Calculer l'espacement horizontal
-        const timeSpan = currentTime - window.frequencyHistory[0].timestamp;
-        const xScale = canvasWidth / Math.max(timeSpan, 3000);
-        
-        // Commencer par le point le plus ancien
-        const firstPoint = window.frequencyHistory[0];
-        const firstX = (currentTime - firstPoint.timestamp) * xScale;
-        const firstY = freqToY(firstPoint.frequency);
-        pitchCanvasCtx.moveTo(canvasWidth - firstX, firstY);
-        
-        // Tracer le reste des points
-        for (let i = 1; i < window.frequencyHistory.length; i++) {
-            const point = window.frequencyHistory[i];
-            const x = canvasWidth - (currentTime - point.timestamp) * xScale;
-            const y = freqToY(point.frequency);
-            pitchCanvasCtx.lineTo(x, y);
-        }
-        
-        pitchCanvasCtx.stroke();
-    }
-    
-    // Dessiner le point actuel de fréquence détectée avec un effet de brillance
-    const detectedY = freqToY(detectedFrequency);
-    
-    // Effet de halo
-    const gradient2 = pitchCanvasCtx.createRadialGradient(
-        canvasWidth - 20, detectedY, 3,
-        canvasWidth - 20, detectedY, 15
-    );
-    gradient2.addColorStop(0, inTolerance ? 'rgba(76, 175, 80, 0.8)' : 'rgba(230, 57, 70, 0.8)');
-    gradient2.addColorStop(1, inTolerance ? 'rgba(76, 175, 80, 0)' : 'rgba(230, 57, 70, 0)');
-    
-    pitchCanvasCtx.fillStyle = gradient2;
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(canvasWidth - 20, detectedY, 15, 0, Math.PI * 2);
-    pitchCanvasCtx.fill();
-    
-    // Point central
-    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(canvasWidth - 20, detectedY, 6, 0, Math.PI * 2);
-    pitchCanvasCtx.fill();
-    
-    // Cercle blanc intérieur pour effet de brillance
-    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(canvasWidth - 22, detectedY - 2, 2, 0, Math.PI * 2);
-    pitchCanvasCtx.fill();
-    
-    // Ajouter un panneau d'information
-    const infoBoxWidth = 180;
-    const infoBoxHeight = 90;
-    const infoBoxX = 10;
-    const infoBoxY = 10;
-    
-    // Dessiner le fond du panneau
-    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    pitchCanvasCtx.strokeStyle = inTolerance ? '#4caf50' : '#e63946';
-    pitchCanvasCtx.lineWidth = 2;
-    
-    // Fond avec coins arrondis
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.roundRect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight, 8);
-    pitchCanvasCtx.fill();
-    pitchCanvasCtx.stroke();
-    
-    // Information textuelle
-    pitchCanvasCtx.textAlign = 'left';
-    pitchCanvasCtx.fillStyle = '#212529';
-    pitchCanvasCtx.font = 'bold 12px sans-serif';
-    pitchCanvasCtx.fillText('Informations:', infoBoxX + 10, infoBoxY + 20);
-    
-    pitchCanvasCtx.font = '12px sans-serif';
-    pitchCanvasCtx.fillText(`Fréquence: ${Math.round(detectedFrequency)} Hz`, infoBoxX + 10, infoBoxY + 40);
-    
-    // Afficher la différence avec une couleur correspondant à la précision
-    pitchCanvasCtx.fillStyle = inTolerance ? '#4caf50' : '#e63946';
-    pitchCanvasCtx.fillText(`Différence: ${Math.round(centsDiff)} cents`, infoBoxX + 10, infoBoxY + 60);
-    
-    // Ajouter une indication visuelle de la direction
-    const arrowX = infoBoxX + 125;
-    const arrowY = infoBoxY + 60;
-    
-    if (Math.abs(centsDiff) > 5) {
-        pitchCanvasCtx.beginPath();
-        if (centsDiff > 0) {
-            // Flèche vers le haut
-            pitchCanvasCtx.moveTo(arrowX, arrowY);
-            pitchCanvasCtx.lineTo(arrowX - 5, arrowY + 8);
-            pitchCanvasCtx.lineTo(arrowX + 5, arrowY + 8);
-        } else {
-            // Flèche vers le bas
-            pitchCanvasCtx.moveTo(arrowX, arrowY + 8);
-            pitchCanvasCtx.lineTo(arrowX - 5, arrowY);
-            pitchCanvasCtx.lineTo(arrowX + 5, arrowY);
-        }
-        pitchCanvasCtx.closePath();
-        pitchCanvasCtx.fill();
-    }
-    
-    // Ajouter une indication verbale
-    let indicationText = "";
-    
-    if (Math.abs(centsDiff) < 5) {
-        indicationText = "Parfait !";
-    } else if (Math.abs(centsDiff) < 25) {
-        indicationText = inTolerance ? "Très bien !" : (centsDiff > 0 ? "Un peu trop haut" : "Un peu trop bas");
-    } else {
-        indicationText = centsDiff > 0 ? "Trop haut" : "Trop bas";
-    }
-    
-    pitchCanvasCtx.fillStyle = '#212529';
-    pitchCanvasCtx.font = 'bold 14px sans-serif';
-    pitchCanvasCtx.textAlign = 'center';
-    pitchCanvasCtx.fillText(indicationText, infoBoxX + infoBoxWidth / 2, infoBoxY + 80);
-    
-    // Jauge visuelle du niveau sonore
-    if (analyser) {
-        const dataArray = new Uint8Array(analyser.fftSize);
-        analyser.getByteTimeDomainData(dataArray);
-        
-        // Calculer le niveau RMS
-        let rms = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-            const amplitude = (dataArray[i] - 128) / 128;
-            rms += amplitude * amplitude;
-        }
-        rms = Math.sqrt(rms / dataArray.length);
-        
-        // Dessiner la jauge de volume
-        const gaugeX = canvasWidth - 100;
-        const gaugeY = canvasHeight - 30;
-        const gaugeWidth = 80;
-        const gaugeHeight = 10;
-        
-        // Fond de la jauge
-        pitchCanvasCtx.fillStyle = '#e9ecef';
-        pitchCanvasCtx.beginPath();
-        pitchCanvasCtx.roundRect(gaugeX, gaugeY, gaugeWidth, gaugeHeight, 5);
-        pitchCanvasCtx.fill();
-        
-        // Niveau de la jauge
-        const level = Math.min(rms * 3, 1); // Multiplier par 3 pour amplifier et plafonner à 1
-        
-        // Couleur basée sur le niveau
-        let gaugeColor;
-        if (level < 0.3) gaugeColor = '#4a6da7'; // Bleu pour faible
-        else if (level < 0.7) gaugeColor = '#4caf50'; // Vert pour bon
-        else gaugeColor = '#e63946'; // Rouge pour fort
-        
-        pitchCanvasCtx.fillStyle = gaugeColor;
-        pitchCanvasCtx.beginPath();
-        pitchCanvasCtx.roundRect(gaugeX, gaugeY, gaugeWidth * level, gaugeHeight, 5);
-        pitchCanvasCtx.fill();
-        
-        // Étiquette
-        pitchCanvasCtx.fillStyle = '#212529';
-        pitchCanvasCtx.font = '10px sans-serif';
-        pitchCanvasCtx.textAlign = 'right';
-        pitchCanvasCtx.fillText('Volume:', gaugeX - 5, gaugeY + 8);
-    }
-}
-// Dessiner un canvas vide avec des instructions
-// Dessiner un canvas vide avec des instructions améliorées
-function drawEmptyPitchCanvas() {
-    pitchCanvasCtx.clearRect(0, 0, pitchCanvas.width, pitchCanvas.height);
-    
-    // Dessiner l'arrière-plan avec un dégradé
-    const gradient = pitchCanvasCtx.createLinearGradient(0, 0, 0, pitchCanvas.height);
-    gradient.addColorStop(0, '#f8f9fa');
-    gradient.addColorStop(1, '#e9ecef');
-    pitchCanvasCtx.fillStyle = gradient;
-    pitchCanvasCtx.fillRect(0, 0, pitchCanvas.width, pitchCanvas.height);
-    
-    // Zone d'instructions avec fond semi-transparent
-    const boxWidth = 300;
-    const boxHeight = 100;
-    const boxX = (pitchCanvas.width - boxWidth) / 2;
-    const boxY = (pitchCanvas.height - boxHeight) / 2;
-    
-    // Fond avec coins arrondis
-    pitchCanvasCtx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    pitchCanvasCtx.strokeStyle = '#4a6da7';
-    pitchCanvasCtx.lineWidth = 2;
-    
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.roundRect(boxX, boxY, boxWidth, boxHeight, 10);
-    pitchCanvasCtx.fill();
-    pitchCanvasCtx.stroke();
-    
-    // Icône de microphone
-    pitchCanvasCtx.fillStyle = '#4a6da7';
-    const micX = pitchCanvas.width / 2;
-    const micY = boxY + 35;
-    
-    // Dessiner un microphone stylisé
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(micX, micY, 15, 0, Math.PI * 2);
-    pitchCanvasCtx.fill();
-    
-    pitchCanvasCtx.fillStyle = '#ffffff';
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.roundRect(micX - 5, micY - 8, 10, 16, 3);
-    pitchCanvasCtx.fill();
-    
-    pitchCanvasCtx.strokeStyle = '#4a6da7';
-    pitchCanvasCtx.lineWidth = 2;
-    pitchCanvasCtx.beginPath();
-    pitchCanvasCtx.arc(micX, micY + 25, 8, Math.PI, Math.PI * 2);
-    pitchCanvasCtx.stroke();
-    
-    // Texte d'instructions
-    pitchCanvasCtx.fillStyle = '#495057';
-    pitchCanvasCtx.font = '14px sans-serif';
-    pitchCanvasCtx.textAlign = 'center';
-    pitchCanvasCtx.fillText("Appuyez sur 'Enregistrer' ou 'Démarrer exercice'", micX, boxY + 70);
-    pitchCanvasCtx.fillText("pour voir votre hauteur vocale en temps réel", micX, boxY + 90);
-}
-// Analyser l'enregistrement
-async function analyzeRecording(blob) {
-    // Convertir le blob en ArrayBuffer
-    const arrayBuffer = await blob.arrayBuffer();
-    
-    // Décoder l'audio
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-    
-    // Obtenir les données audio
-    const audioData = audioBuffer.getChannelData(0);
-    
-    // Implémenter l'algorithme YIN simplifié pour la détection de hauteur
-    const detectedFrequency = detectPitch(audioData, audioContext.sampleRate);
-    
-    // Mettre à jour la notation musicale avec la note détectée
-    drawMusicNotation(currentNote, detectedFrequency);
-    
-    // Trouver la note la plus proche
-    const closestNote = findClosestNote(detectedFrequency);
-    
-    // Calculer la différence en cents
-    const centsDiff = calculateCents(detectedFrequency, currentNote.frequency);
-    const absCentsDiff = Math.abs(centsDiff);
-    
-    // Évaluation de la précision
-    let evaluation = "";
-    if (absCentsDiff < 25) {
-        evaluation = "Excellent ! Votre note est très précise.";
-    } else if (absCentsDiff < 50) {
-        evaluation = "Très bien ! Votre note est proche de la cible.";
-    } else if (absCentsDiff < 100) {
-        evaluation = "Bien. Essayez d'ajuster légèrement votre voix.";
-    } else {
-        evaluation = "Continuez à pratiquer. Essayez d'écouter attentivement la note cible.";
-    }
-    
-    // Afficher l'analyse
-    pitchAnalysisEl.innerHTML = `
-        <p>Analyse de l'enregistrement :</p>
-        <p>Voyelle prononcée : <strong>${currentVowel}</strong></p>
-        <p>Note visée : <strong>${currentNote.name} (${Math.round(currentNote.frequency)} Hz)</strong></p>
-        <p>Note détectée : <strong>${closestNote.name} (${Math.round(detectedFrequency)} Hz)</strong></p>
-        <p>Différence : <strong>${Math.abs(centsDiff.toFixed(0))} cents ${centsDiff > 0 ? 'au-dessus' : 'en dessous'}</strong></p>
-        <p style="margin-top: 10px; font-weight: bold;">${evaluation}</p>
-    `;
-}
-
-// Algorithme de détection de hauteur YIN simplifié
-function detectPitch(audioData, sampleRate) {
-    // Paramètres
-    const bufferSize = 2048;
-    const threshold = 0.2;
-    const minFreq = 80;  // Hz
-    const maxFreq = 900; // Hz
-    
-    // Calculer la fonction de différence
-    const yinBuffer = new Float32Array(bufferSize / 2);
-    
-    // Étape 1: Calculer la fonction de différence
-    for (let tau = 0; tau < yinBuffer.length; tau++) {
-        yinBuffer[tau] = 0;
-        
-        for (let i = 0; i < bufferSize / 2; i++) {
-            const delta = audioData[i] - audioData[i + tau];
-            yinBuffer[tau] += delta * delta;
-        }
-    }
-    
-    // Étape 2: Fonction de différence cumulative normalisée
-    let runningSum = 0;
-    yinBuffer[0] = 1;
-    
-    for (let tau = 1; tau < yinBuffer.length; tau++) {
-        runningSum += yinBuffer[tau];
-        yinBuffer[tau] = yinBuffer[tau] * tau / runningSum;
-    }
-    
-    // Étape 3: Trouver le premier minimum sous le seuil
-    let tau;
-    for (tau = 2; tau < yinBuffer.length; tau++) {
-        if (yinBuffer[tau] < threshold && yinBuffer[tau - 1] > yinBuffer[tau] && yinBuffer[tau] < yinBuffer[tau + 1]) {
-            break;
-        }
-    }
-    
-    // Convertir l'indice en fréquence
-    let interpolatedTau = refineFrequency(yinBuffer, tau);
-    
-    // Convertir en Hz
-    let frequencyHz = sampleRate / interpolatedTau;
-    
-    // Vérifier si la fréquence est dans les limites
-    if (frequencyHz < minFreq || frequencyHz > maxFreq) {
-        // Si hors limites, utiliser une valeur par défaut
-        frequencyHz = currentNote.frequency;
-    }
-    
-    return frequencyHz;
-}
-
-// Affiner l'estimation de fréquence par interpolation parabolique
-function refineFrequency(yinBuffer, tau) {
-    if (tau === 0 || tau >= yinBuffer.length - 1) {
-        return tau;
-    }
-    
-    const y1 = yinBuffer[tau - 1];
-    const y2 = yinBuffer[tau];
-    const y3 = yinBuffer[tau + 1];
-    
-    const a = (y3 - 2 * y2 + y1) / 2;
-    const b = (y3 - y1) / 2;
-    
-    if (a === 0) {
-        return tau;
-    }
-    
-    const refinedTau = tau - b / (2 * a);
-    return refinedTau;
-}
-// Ajoutez ce code à la fin de votre fichier main.js
-window.addEventListener('load', function() {
-    const stopBtnAlt = document.getElementById('stop-btn');
-    if (stopBtnAlt) {
-        console.log("Bouton d'arrêt trouvé, ajout d'un gestionnaire alternatif");
-        stopBtnAlt.onclick = function() {
-            console.log("Bouton d'arrêt cliqué");
-            stopRecording();
-        };
-    } else {
-        console.error("Bouton d'arrêt non trouvé!");
-    }
-    console.log("Vérification des boutons...");
-    const recordBtnAlt = document.getElementById('record-btn');
-    if (recordBtnAlt) {
-        console.log("Bouton d'enregistrement trouvé, ajout d'un gestionnaire alternatif");
-        recordBtnAlt.onclick = function() {
-            console.log("Bouton d'enregistrement cliqué");
-            startRecording();
-        };
-    } else {
-        console.error("Bouton d'enregistrement non trouvé!");
-    }
-});
