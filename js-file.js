@@ -91,6 +91,12 @@ document.addEventListener('DOMContentLoaded', () => {
     startBtn.addEventListener('click', startExercise);
     recordBtn.addEventListener('click', startRecording);
     stopBtn.addEventListener('click', stopRecording);
+    
+    // S'assurer que les boutons ont le bon état initial
+    recordBtn.disabled = false;
+    stopBtn.disabled = true;
+    
+    console.log('Application initialisée, boutons configurés');
 });
 
 // Générer un nouvel exercice
@@ -457,7 +463,7 @@ async function startRecording(isAutomatic = false) {
     try {
         // Demander l'accès au microphone
         audioStream = await navigator.mediaDevices.getUserMedia({ 
-            audio: true // Simplifier pour réduire les erreurs potentielles
+            audio: true
         });
         
         // Démarrer l'analyseur de son avec le flux audio du microphone
@@ -487,6 +493,15 @@ async function startRecording(isAutomatic = false) {
             mimeType = 'audio/mp4';
         } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
             mimeType = 'audio/ogg';
+        }
+        
+        // CHANGEMENT IMPORTANT: Vérifier si mediaRecorder existe déjà et le nettoyer si c'est le cas
+        if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+            try {
+                mediaRecorder.stop();
+            } catch (e) {
+                console.log('Erreur arrêt ancien enregistreur:', e);
+            }
         }
         
         mediaRecorder = new MediaRecorder(audioStream, { mimeType });
@@ -531,6 +546,10 @@ async function startRecording(isAutomatic = false) {
             
             // Analyser l'enregistrement
             analyzeRecording(audioBlob);
+            
+            // AJOUT: Réinitialiser l'interface utilisateur
+            recordBtn.disabled = false;
+            stopBtn.disabled = true;
         });
         
         // Démarrer l'enregistrement avec un timeslice pour s'assurer que dataavailable est déclenché
@@ -555,42 +574,44 @@ async function startRecording(isAutomatic = false) {
         startBtn.disabled = false;
     }
 }
-// Ajoutez ceci à la fin de votre fichier js-file.js
 
 // Arrêter l'enregistrement
 function stopRecording() {
-    // Vérifier si l'enregistreur est actif
+    console.log('Tentative d\'arrêt de l\'enregistrement...');
+    console.log('État du mediaRecorder:', mediaRecorder ? mediaRecorder.state : 'non défini');
+    
+    // CHANGEMENT: Vérification plus robuste
     if (!mediaRecorder) {
         console.error('Aucun enregistreur disponible');
+        // Réinitialiser l'interface quand même
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        startBtn.disabled = false;
         return;
     }
-    
-    if (mediaRecorder.state === 'inactive') {
-        console.warn('Enregistreur déjà inactif');
-        return;
-    }
-    
-    console.log('Arrêt de l\'enregistrement...');
     
     try {
-        // Arrêter le MediaRecorder
-        mediaRecorder.stop();
+        // N'arrêter que si l'enregistreur est actif
+        if (mediaRecorder.state !== 'inactive') {
+            mediaRecorder.stop();
+            console.log('MediaRecorder.stop() appelé');
+        } else {
+            console.warn('Enregistreur déjà inactif');
+        }
         
-        // Arrêter les pistes du flux audio
+        // Arrêter les pistes du flux audio dans tous les cas
         if (audioStream) {
             audioStream.getTracks().forEach(track => {
                 track.stop();
+                console.log('Piste audio arrêtée');
             });
         }
         
-        // Mettre à jour l'interface
+        // Mettre à jour l'interface - même si l'enregistreur était déjà inactif
         recordBtn.disabled = false;
         stopBtn.disabled = true;
-        
-        // Réactiver le bouton de démarrage
         startBtn.disabled = false;
         
-        console.log('Enregistrement arrêté avec succès');
     } catch (error) {
         console.error('Erreur lors de l\'arrêt de l\'enregistrement:', error);
         
@@ -686,6 +707,9 @@ function analyzeRecording(audioBlob) {
                 // Comparer avec la note cible
                 const targetCentsDiff = calculateCents(averagePitch, currentNote.frequency);
                 
+                // AJOUT: Calculer l'écart en pourcentage
+                const percentageDiff = Math.abs((averagePitch - currentNote.frequency) / currentNote.frequency * 100);
+                
                 // Mettre à jour l'affichage de l'analyse
                 pitchAnalysisEl.innerHTML = `
                     <div style="margin-bottom: 10px;">
@@ -695,6 +719,8 @@ function analyzeRecording(audioBlob) {
                         <br>
                         <strong>Différence avec la note cible:</strong> ${Math.abs(Math.round(targetCentsDiff))} cents 
                         ${targetCentsDiff > 0 ? 'au-dessus' : 'en dessous'}
+                        <br>
+                        <strong>Écart en pourcentage:</strong> ${percentageDiff.toFixed(2)}%
                     </div>
                     
                     <div style="margin-top: 15px; padding: 10px; background-color: ${Math.abs(targetCentsDiff) < 50 ? '#c8e6c9' : '#ffcdd2'}; border-radius: 5px;">
