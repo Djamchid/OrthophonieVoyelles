@@ -12,6 +12,7 @@ class SoundAnalyzer {
      * @param {Number} options.minDecibels - Minimum decibel value
      * @param {Number} options.maxDecibels - Maximum decibel value
      * @param {Boolean} options.verticalSpectrogram - Whether to display spectrogram vertically (default: true)
+     * @param {Number} options.targetFrequency - Target frequency to highlight with vertical line (optional)
      */
     constructor(options) {
         // Set up canvas elements
@@ -31,6 +32,9 @@ class SoundAnalyzer {
         this.fftSize = options.fftSize || 2048;
         this.minDecibels = options.minDecibels || -100;
         this.maxDecibels = options.maxDecibels || 0;
+        
+        // Target frequency to highlight
+        this.targetFrequency = options.targetFrequency || null;
         
         // Visualization state
         this.isRunning = false;
@@ -102,6 +106,30 @@ class SoundAnalyzer {
             ctx.fillText('21', xPos, height - 5);
         }
         
+        // Draw target frequency line if set
+        if (this.targetFrequency) {
+            const minLog = Math.log10(20);
+            const maxLog = Math.log10(this.audioContext ? (this.audioContext.sampleRate / 2) : 22050);
+            const xPos = (Math.log10(Math.max(20, this.targetFrequency)) - minLog) / (maxLog - minLog) * width;
+            
+            // Draw vertical line for target frequency
+            ctx.strokeStyle = '#00FF00'; // Bright green
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(xPos, 0);
+            ctx.lineTo(xPos, height);
+            ctx.stroke();
+            
+            // Add frequency label
+            ctx.fillStyle = '#00FF00';
+            ctx.font = '12px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${this.targetFrequency} Hz`, xPos, 20);
+            
+            // Add "Target" label
+            ctx.fillText('TARGET', xPos, 35);
+        }
+        
         // Horizontal lines (dB)
         const minDb = this.analyser ? this.analyser.minDecibels : this.minDecibels;
         const maxDb = this.analyser ? this.analyser.maxDecibels : this.maxDecibels;
@@ -151,6 +179,14 @@ class SoundAnalyzer {
         const db = Math.round(minDb + yRatio * (maxDb - minDb));
         
         return { frequency, db };
+    }
+    
+    /**
+     * Set or update the target frequency
+     * @param {Number} frequency - Target frequency in Hz
+     */
+    setTargetFrequency(frequency) {
+        this.targetFrequency = frequency;
     }
     
     /**
@@ -215,6 +251,11 @@ class SoundAnalyzer {
      * @param {Object} settings - New settings
      */
     updateSettings(settings) {
+        if (!this.analyser && settings.targetFrequency) {
+            this.targetFrequency = settings.targetFrequency;
+            return;
+        }
+        
         if (!this.analyser) return;
         
         if (settings.fftSize) {
@@ -230,6 +271,10 @@ class SoundAnalyzer {
         if (settings.maxDecibels) {
             this.maxDecibels = settings.maxDecibels;
             this.analyser.maxDecibels = parseInt(settings.maxDecibels);
+        }
+        
+        if (settings.targetFrequency !== undefined) {
+            this.targetFrequency = settings.targetFrequency;
         }
         
         if (settings.verticalSpectrogram !== undefined) {
