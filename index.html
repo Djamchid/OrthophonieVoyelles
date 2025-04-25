@@ -41,9 +41,16 @@
                 <button id="record-btn">Enregistrer</button>
                 <button id="stop-btn" disabled>Arrêter</button>
                 <div id="audio-player-container"></div>
-                <div id="realtime-display">
-                    <canvas id="pitch-canvas" width="400" height="200"></canvas>
+                
+                <!-- Remplacer l'ancien canvas par les nouveaux éléments d'analyse -->
+                <div id="sound-analysis">
+                    <h3>Analyse en temps réel</h3>
+                    <div class="analyzer-container">
+                        <canvas id="frequency-canvas" width="400" height="200"></canvas>
+                        <canvas id="spectrogram-canvas" width="400" height="150"></canvas>
+                    </div>
                 </div>
+                
                 <div id="analysis-result">
                     <h3>Analyse</h3>
                     <div id="pitch-analysis"></div>
@@ -74,7 +81,9 @@
         </div>
     </div>
     
+    <!-- Charger d'abord sound-analyzer.js -->
+    <script src="sound-analyzer.js"></script>
+    <!-- Puis le script principal -->
     <script src="js-file.js"></script>
-
 </body>
 </html>
