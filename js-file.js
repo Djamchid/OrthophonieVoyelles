@@ -716,4 +716,251 @@ function stopRecording() {
             }
         }
     }
+// Fonction pour analyser l'enregistrement audio
+async function analyzeRecording(audioBlob) {
+    console.log('Analyse de l\'enregistrement...');
+    pitchAnalysisEl.innerHTML = '<p>Analyse en cours...</p>';
+    
+    try {
+        // Créer un nouvel audioContext pour l'analyse
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        // Convertir le blob en ArrayBuffer
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        
+        // Décoder le fichier audio
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        
+        // Extraire les données audio
+        const audioData = audioBuffer.getChannelData(0);
+        const sampleRate = audioBuffer.sampleRate;
+        
+        // Calculer la fréquence fondamentale moyenne avec autocorrélation
+        const { frequency, clarity } = calculatePitch(audioData, sampleRate);
+        
+        // Trouver la note la plus proche
+        const detectedNote = findClosestNote(frequency);
+        
+        // Calculer la différence en cents
+        const centsDiff = calculateCents(frequency, currentNote.frequency);
+        const absCentsDiff = Math.abs(centsDiff);
+        
+        // Trouver la note enregistrée et calculer sa différence
+        const recordedNote = {
+            name: detectedNote.name,
+            frequency: frequency,
+            notation: detectedNote.notation
+        };
+        
+        // Mettre à jour la notation musicale avec la note de l'utilisateur
+        drawMusicNotation(currentNote, frequency);
+        
+        // Générer le feedback
+        let feedback = '';
+        let accuracyClass = '';
+        
+        if (absCentsDiff <= 25) {
+            feedback = "Excellent! Votre note est très précise.";
+            accuracyClass = 'excellent';
+        } else if (absCentsDiff <= 50) {
+            feedback = "Bien! Votre note est proche de la cible.";
+            accuracyClass = 'good';
+        } else if (absCentsDiff <= 100) {
+            feedback = "Acceptable. Essayez de vous rapprocher de la note cible.";
+            accuracyClass = 'acceptable';
+        } else {
+            feedback = "À améliorer. Votre note est assez éloignée de la cible.";
+            accuracyClass = 'needs-improvement';
+        }
+        
+        // Afficher les résultats
+        pitchAnalysisEl.innerHTML = `
+            <div class="analysis-result ${accuracyClass}">
+                <h3>Résultats de l'analyse</h3>
+                <p><strong>Voyelle prononcée:</strong> ${currentVowel}</p>
+                <p><strong>Note cible:</strong> ${currentNote.name} (${Math.round(currentNote.frequency)} Hz)</p>
+                <p><strong>Votre note:</strong> ${recordedNote.name} (${Math.round(frequency)} Hz)</p>
+                <p><strong>Différence:</strong> ${Math.abs(centsDiff.toFixed(0))} cents 
+                    ${centsDiff > 0 ? 'au-dessus' : 'en dessous'}</p>
+                <p><strong>Clarté de la note:</strong> ${Math.round(clarity * 100)}%</p>
+                <p class="feedback"><strong>Évaluation:</strong> ${feedback}</p>
+            </div>
+        `;
+        
+        // Appliquer des styles pour la classe d'évaluation
+        const style = document.createElement('style');
+        style.textContent = `
+            .analysis-result {
+                border-radius: var(--border-radius);
+                padding: 15px;
+                margin-top: 10px;
+            }
+            .excellent {
+                background-color: #e8f5e9;
+                border-left: 5px solid #4caf50;
+            }
+            .good {
+                background-color: #f1f8e9;
+                border-left: 5px solid #8bc34a;
+            }
+            .acceptable {
+                background-color: #fff8e1;
+                border-left: 5px solid #ffc107;
+            }
+            .needs-improvement {
+                background-color: #ffebee;
+                border-left: 5px solid #f44336;
+            }
+            .feedback {
+                font-weight: bold;
+                margin-top: 10px;
+            }
+        `;
+        document.head.appendChild(style);
+        
+    } catch (error) {
+        console.error('Erreur lors de l\'analyse de l\'enregistrement:', error);
+        pitchAnalysisEl.innerHTML = `<p>Erreur lors de l'analyse: ${error.message}</p>`;
+    }
+}
+
+// Fonction pour calculer la fréquence fondamentale avec autocorrélation
+function calculatePitch(audioData, sampleRate) {
+    // Utiliser seulement un segment de données pour l'analyse
+    // Ignorer le début et la fin qui peuvent contenir des transitoires
+    const startSample = Math.floor(audioData.length * 0.2); // Ignorer les premiers 20%
+    const endSample = Math.floor(audioData.length * 0.8);   // Ignorer les derniers 20%
+    const segmentLength = endSample - startSample;
+    
+    // Taille de la fenêtre pour l'autocorrélation
+    const windowSize = Math.min(4096, segmentLength);
+    
+    // Collecter des mesures de fréquence pour plusieurs fenêtres
+    const frequencies = [];
+    const clarities = [];
+    
+    // Nombre de fenêtres à analyser
+    const numWindows = Math.min(10, Math.floor(segmentLength / (windowSize / 2)));
+    
+    for (let i = 0; i < numWindows; i++) {
+        const windowStart = startSample + Math.floor(i * (segmentLength - windowSize) / (numWindows - 1));
+        const windowData = audioData.slice(windowStart, windowStart + windowSize);
+        
+        // Appliquer une fenêtre de Hann pour réduire les artefacts
+        for (let j = 0; j < windowSize; j++) {
+            windowData[j] *= 0.5 * (1 - Math.cos(2 * Math.PI * j / (windowSize - 1)));
+        }
+        
+        // Autocorrélation
+        const correlation = new Float32Array(windowSize);
+        let sumSquares = 0;
+        
+        // Calculer l'énergie du signal
+        for (let j = 0; j < windowSize; j++) {
+            sumSquares += windowData[j] * windowData[j];
+        }
+        
+        if (sumSquares <= 0) continue; // Éviter la division par zéro
+        
+        // Calculer l'autocorrélation normalisée
+        for (let lag = 0; lag < windowSize; lag++) {
+            let sum = 0;
+            for (let j = 0; j < windowSize - lag; j++) {
+                sum += windowData[j] * windowData[j + lag];
+            }
+            correlation[lag] = sum / sumSquares;
+        }
+        
+        // Trouver les pics dans la fonction d'autocorrélation
+        // Ignorer les premiers échantillons (fréquences trop élevées)
+        const minLag = Math.floor(sampleRate / 1000); // Limite à 1000 Hz
+        const maxLag = Math.floor(sampleRate / 80);   // Limite à 80 Hz
+        
+        let maxCorrelation = 0;
+        let bestLag = 0;
+        
+        for (let lag = minLag; lag < maxLag; lag++) {
+            // Vérifier si c'est un pic local
+            if (correlation[lag] > correlation[lag - 1] && 
+                correlation[lag] > correlation[lag + 1] && 
+                correlation[lag] > maxCorrelation) {
+                maxCorrelation = correlation[lag];
+                bestLag = lag;
+            }
+        }
+        
+        // Si un pic valide a été trouvé
+        if (bestLag > 0 && maxCorrelation > 0.3) {
+            // Calcul plus précis avec interpolation parabolique
+            const y1 = correlation[bestLag - 1];
+            const y2 = correlation[bestLag];
+            const y3 = correlation[bestLag + 1];
+            const d = (y3 - y1) / (2 * (2 * y2 - y1 - y3));
+            
+            const refinedLag = bestLag + d;
+            const frequency = sampleRate / refinedLag;
+            
+            // Mesure de la clarté (qualité) de la note
+            const clarity = maxCorrelation;
+            
+            frequencies.push(frequency);
+            clarities.push(clarity);
+        }
+    }
+    
+    // Si aucune fréquence valide n'a été trouvée
+    if (frequencies.length === 0) {
+        return { frequency: 0, clarity: 0 };
+    }
+    
+    // Trier les fréquences et prendre la médiane pour éviter les valeurs aberrantes
+    frequencies.sort((a, b) => a - b);
+    clarities.sort((a, b) => a - b);
+    
+    const medianFrequency = frequencies[Math.floor(frequencies.length / 2)];
+    const medianClarity = clarities[Math.floor(clarities.length / 2)];
+    
+    return { frequency: medianFrequency, clarity: medianClarity };
+}
+
+// Styles CSS pour les résultats d'analyse
+const analysisStyles = `
+.analysis-result {
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-top: 10px;
+}
+.excellent {
+    background-color: #e8f5e9;
+    border-left: 5px solid #4caf50;
+}
+.good {
+    background-color: #f1f8e9;
+    border-left: 5px solid #8bc34a;
+}
+.acceptable {
+    background-color: #fff8e1;
+    border-left: 5px solid #ffc107;
+}
+.needs-improvement {
+    background-color: #ffebee;
+    border-left: 5px solid #f44336;
+}
+.feedback {
+    font-weight: bold;
+    margin-top: 10px;
+}
+`;
+
+// Ajouter les styles au document
+function addAnalysisStyles() {
+    const styleElement = document.createElement('style');
+    styleElement.textContent = analysisStyles;
+    document.head.appendChild(styleElement);
+}
+
+// Appeler cette fonction lors de l'initialisation
+document.addEventListener('DOMContentLoaded', () => {
+    addAnalysisStyles();
+});
 }
