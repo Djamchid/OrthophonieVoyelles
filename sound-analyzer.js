@@ -289,7 +289,9 @@ class SoundAnalyzer {
      * @returns {Promise} - Resolves when microphone is set up
      */
     async startMicrophoneAudio() {
-        if (this.isRunning) return;
+        if (this.isRunning) {
+            this.stopAudio(); // Stop existing audio before starting a new one
+        }
         
         try {
             // Create audio context
@@ -315,7 +317,7 @@ class SoundAnalyzer {
             this.isRunning = true;
             this.visualize();
             
-            return true;
+            return stream;
         } catch (error) {
             console.error('Error accessing microphone:', error);
             throw error;
@@ -328,7 +330,9 @@ class SoundAnalyzer {
      * @returns {Promise} - Resolves when file is loaded and playing
      */
     async startFileAudio(file) {
-        if (this.isRunning) return;
+        if (this.isRunning) {
+            this.stopAudio();
+        }
         
         try {
             // Create audio context
@@ -469,8 +473,9 @@ class SoundAnalyzer {
             this.sweepLfo.disconnect();
         }
         
-        if (this.audioContext) {
-            this.audioContext.close();
+        // Close the audio context if it exists
+        if (this.audioContext && this.audioContext.state !== 'closed') {
+            this.audioContext.close().catch(err => console.error('Error closing AudioContext:', err));
         }
         
         // Reset properties
@@ -694,5 +699,109 @@ class SoundAnalyzer {
             );
             this.spectrogramOffset = height - 1;
         }
+    }
+    
+    /**
+     * Calculate the pitch from audio data
+     * @param {Float32Array} audioData - Raw audio data
+     * @param {Number} sampleRate - Sample rate of the audio
+     * @returns {Object} - Object with frequency and clarity values
+     */
+    calculatePitch(audioData, sampleRate) {
+        // Utiliser seulement un segment de données pour l'analyse
+        // Ignorer le début et la fin qui peuvent contenir des transitoires
+        const startSample = Math.floor(audioData.length * 0.2); // Ignorer les premiers 20%
+        const endSample = Math.floor(audioData.length * 0.8);   // Ignorer les derniers 20%
+        const segmentLength = endSample - startSample;
+        
+        // Taille de la fenêtre pour l'autocorrélation
+        const windowSize = Math.min(4096, segmentLength);
+        
+        // Collecter des mesures de fréquence pour plusieurs fenêtres
+        const frequencies = [];
+        const clarities = [];
+        
+        // Nombre de fenêtres à analyser
+        const numWindows = Math.min(10, Math.floor(segmentLength / (windowSize / 2)));
+        
+        for (let i = 0; i < numWindows; i++) {
+            const windowStart = startSample + Math.floor(i * (segmentLength - windowSize) / (numWindows - 1));
+            const windowData = audioData.slice(windowStart, windowStart + windowSize);
+            
+            // Appliquer une fenêtre de Hann pour réduire les artefacts
+            for (let j = 0; j < windowSize; j++) {
+                windowData[j] *= 0.5 * (1 - Math.cos(2 * Math.PI * j / (windowSize - 1)));
+            }
+            
+            // Autocorrélation
+            const correlation = new Float32Array(windowSize);
+            let sumSquares = 0;
+            
+            // Calculer l'énergie du signal
+            for (let j = 0; j < windowSize; j++) {
+                sumSquares += windowData[j] * windowData[j];
+            }
+            
+            if (sumSquares <= 0) continue; // Éviter la division par zéro
+            
+            // Calculer l'autocorrélation normalisée
+            for (let lag = 0; lag < windowSize; lag++) {
+                let sum = 0;
+                for (let j = 0; j < windowSize - lag; j++) {
+                    sum += windowData[j] * windowData[j + lag];
+                }
+                correlation[lag] = sum / sumSquares;
+            }
+            
+            // Trouver les pics dans la fonction d'autocorrélation
+            // Ignorer les premiers échantillons (fréquences trop élevées)
+            const minLag = Math.floor(sampleRate / 1000); // Limite à 1000 Hz
+            const maxLag = Math.floor(sampleRate / 80);   // Limite à 80 Hz
+            
+            let maxCorrelation = 0;
+            let bestLag = 0;
+            
+            for (let lag = minLag; lag < maxLag; lag++) {
+                // Vérifier si c'est un pic local
+                if (correlation[lag] > correlation[lag - 1] && 
+                    correlation[lag] > correlation[lag + 1] && 
+                    correlation[lag] > maxCorrelation) {
+                    maxCorrelation = correlation[lag];
+                    bestLag = lag;
+                }
+            }
+            
+            // Si un pic valide a été trouvé
+            if (bestLag > 0 && maxCorrelation > 0.3) {
+                // Calcul plus précis avec interpolation parabolique
+                const y1 = correlation[bestLag - 1];
+                const y2 = correlation[bestLag];
+                const y3 = correlation[bestLag + 1];
+                const d = (y3 - y1) / (2 * (2 * y2 - y1 - y3));
+                
+                const refinedLag = bestLag + d;
+                const frequency = sampleRate / refinedLag;
+                
+                // Mesure de la clarté (qualité) de la note
+                const clarity = maxCorrelation;
+                
+                frequencies.push(frequency);
+                clarities.push(clarity);
+            }
+        }
+        
+        // Si aucune fréquence valide n'a été trouvée
+        if (frequencies.length === 0) {
+            return { frequency: 0, clarity: 0 };
+        }
+        
+        // Trier les fréquences et prendre la médiane pour éviter les valeurs aberrantes
+        frequencies.sort((a, b) => a - b);
+        clarities.sort((a, b) => a - b);
+        
+        const medianFrequency = frequencies[Math.floor(frequencies.length / 2)];
+        const medianClarity = clarities[Math.floor(clarities.length / 2)];
+        
+        return { frequency: medianFrequency, clarity: medianClarity };
     }
 }
