@@ -138,6 +138,16 @@ button:disabled {
     margin: 0 15px;
 }
 
+.timer.active {
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
 /* Frequency Range Slider */
 .frequency-range {
     margin: 20px 0;
@@ -217,6 +227,7 @@ button:disabled {
 #score-container {
     min-height: 150px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
 }
@@ -231,10 +242,27 @@ button:disabled {
 
 #audio-player-container {
     margin: 20px 0;
+    width: 100%;
+}
+
+#audio-player-container audio {
+    width: 100%;
+    display: block;
 }
 
 #record-btn {
     background-color: var(--accent-color);
+}
+
+#record-btn.recording {
+    background-color: #c1303b;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
 }
 
 #stop-btn {
@@ -254,27 +282,37 @@ button:disabled {
     padding: 10px;
 }
 
-/* Responsive */
-@media (max-width: 768px) {
-    .result-display {
-        flex-direction: column;
-        gap: 20px;
-    }
-    
-    .vowel-display, .note-display {
-        margin: 0;
-    }
-    
-    .result {
-        height: 60px;
-        font-size: 2.5rem;
-    }
-    
-    .range-slider {
-        height: 60px;
-    }
+/* Styles d'analyse */
+.analysis-result {
+    border-radius: var(--border-radius);
+    padding: 15px;
+    margin-top: 10px;
 }
-/* Ajoutez ces styles à la fin de votre fichier CSS existant */
+
+.excellent {
+    background-color: #e8f5e9;
+    border-left: 5px solid #4caf50;
+}
+
+.good {
+    background-color: #f1f8e9;
+    border-left: 5px solid #8bc34a;
+}
+
+.acceptable {
+    background-color: #fff8e1;
+    border-left: 5px solid #ffc107;
+}
+
+.needs-improvement {
+    background-color: #ffebee;
+    border-left: 5px solid #f44336;
+}
+
+.feedback {
+    font-weight: bold;
+    margin-top: 10px;
+}
 
 /* Nouvelles sections pour l'analyseur de son */
 .analyzer-container {
@@ -307,8 +345,48 @@ button:disabled {
     border-radius: var(--border-radius);
 }
 
+/* Instructions */
+.instructions-panel {
+    margin-top: 30px;
+    padding: 20px;
+    background-color: var(--secondary-color);
+    border-radius: var(--border-radius);
+}
+
+.instructions-panel ol, 
+.instructions-panel ul {
+    padding-left: 20px;
+    margin: 15px 0;
+}
+
+.instructions-panel li {
+    margin-bottom: 8px;
+}
+
+.tips {
+    margin-top: 20px;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
+    .result-display {
+        flex-direction: column;
+        gap: 20px;
+    }
+    
+    .vowel-display, .note-display {
+        margin: 0;
+    }
+    
+    .result {
+        height: 60px;
+        font-size: 2.5rem;
+    }
+    
+    .range-slider {
+        height: 60px;
+    }
+    
     .analyzer-container {
         flex-direction: column;
     }
@@ -317,5 +395,17 @@ button:disabled {
     #spectrogram-canvas {
         width: 100%;
         height: 180px;
+    }
+    
+    .controls {
+        flex-direction: column;
+    }
+    
+    button {
+        width: 100%;
+    }
+    
+    .timer {
+        margin: 10px auto;
     }
 }
