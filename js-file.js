@@ -41,7 +41,6 @@ const notes = [
 const generateBtn = document.getElementById('generate-btn');
 const startBtn = document.getElementById('start-btn');
 const recordBtn = document.getElementById('record-btn');
-const stopBtn = document.getElementById('stop-btn');
 const timerEl = document.getElementById('timer');
 const selectedVowelEl = document.getElementById('selected-vowel');
 const selectedNoteEl = document.getElementById('selected-note');
@@ -67,7 +66,7 @@ let audioChunks = [];
 let audioStream;
 let audioContext;
 let soundAnalyzer; // Instance de SoundAnalyzer
-let isRecording = false; // Nouvelle variable pour suivre l'état de l'enregistrement
+let isRecording = false; // Variable pour suivre l'état de l'enregistrement
 
 // Initialisation
 document.addEventListener('DOMContentLoaded', () => {
@@ -100,7 +99,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Événements
     generateBtn.addEventListener('click', generateExercise);
     startBtn.addEventListener('click', startExercise);
-    recordBtn.addEventListener('click', toggleRecording); // Modifié pour utiliser toggleRecording
+    recordBtn.addEventListener('click', toggleRecording);
     
     // Initialize the frequency range sliders
     minFreqSlider.addEventListener('input', updateFrequencyRange);
@@ -189,7 +188,7 @@ function generateExercise() {
     }
     
     // Réinitialiser l'analyse
-    pitchAnalysisEl.innerHTML = '';
+    pitchAnalysisEl.innerHTML = '<p>Enregistrez votre voix pour voir l\'analyse.</p>';
     
     // Jouer la note de référence brièvement
     playReferenceNote(currentNote.frequency, 0.5);
@@ -528,20 +527,29 @@ function calculateCents(f1, f2) {
     return 1200 * Math.log2(f1 / f2);
 }
 
-// Nouvelle fonction: bascule entre démarrer et arrêter l'enregistrement
+// Fonction pour basculer entre démarrer et arrêter l'enregistrement
 function toggleRecording() {
     if (isRecording) {
         stopRecording();
-        recordBtn.textContent = "Enregistrer";
     } else {
         startRecording();
-        recordBtn.textContent = "Arrêter";
     }
 }
 
 // Démarrer l'enregistrement
 async function startRecording(isAutomatic = false) {
     try {
+        // Vérifier si un enregistrement est déjà en cours
+        if (isRecording) {
+            console.log('Enregistrement déjà en cours');
+            return;
+        }
+        
+        // Mettre à jour l'interface
+        recordBtn.textContent = "Arrêter";
+        recordBtn.classList.add('recording');
+        startBtn.disabled = true;
+        
         // Demander l'accès au microphone
         audioStream = await navigator.mediaDevices.getUserMedia({ 
             audio: true
@@ -551,14 +559,14 @@ async function startRecording(isAutomatic = false) {
         if (soundAnalyzer) {
             // Si l'audioContext est suspendu, le reprendre
             if (audioContext.state === 'suspended') {
-                audioContext.resume();
+                await audioContext.resume();
             }
             
             // Configurer l'analyseur pour mettre en évidence la fréquence cible
             soundAnalyzer.updateSettings({
                 minDecibels: -80,
                 maxDecibels: -20,
-                targetFrequency: currentNote.frequency  // Assurer que la fréquence cible est à jour
+                targetFrequency: currentNote.frequency
             });
             
             // Démarrer l'analyse en temps réel
@@ -577,7 +585,7 @@ async function startRecording(isAutomatic = false) {
             mimeType = 'audio/ogg';
         }
         
-        // CHANGEMENT IMPORTANT: Vérifier si mediaRecorder existe déjà et le nettoyer si c'est le cas
+        // Nettoyer les anciens enregistrements
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
             try {
                 mediaRecorder.stop();
@@ -586,11 +594,11 @@ async function startRecording(isAutomatic = false) {
             }
         }
         
+        // Créer un nouveau MediaRecorder
         mediaRecorder = new MediaRecorder(audioStream, { mimeType });
-        
         audioChunks = [];
         
-        // S'assurer que l'événement dataavailable est déclenché
+        // Configurer les événements de l'enregistreur
         mediaRecorder.addEventListener('dataavailable', event => {
             if (event.data.size > 0) {
                 audioChunks.push(event.data);
@@ -604,19 +612,21 @@ async function startRecording(isAutomatic = false) {
             // Marquer l'enregistrement comme terminé
             isRecording = false;
             
-            // Modifier le texte du bouton d'enregistrement
-            if (!isAutomatic) {
-                recordBtn.textContent = "Enregistrer";
-            }
+            // Mettre à jour l'interface
+            recordBtn.textContent = "Enregistrer";
+            recordBtn.classList.remove('recording');
+            recordBtn.disabled = false;
+            startBtn.disabled = false;
             
             // Arrêter l'analyseur de son
             if (soundAnalyzer) {
                 soundAnalyzer.stopAudio();
             }
             
+            // Vérifier si des données audio ont été capturées
             if (audioChunks.length === 0) {
                 console.error('Aucune donnée audio capturée');
-                alert('Aucune donnée audio n\'a été capturée. Veuillez vérifier votre microphone.');
+                pitchAnalysisEl.innerHTML = '<p>Aucune donnée audio n\'a été capturée. Veuillez vérifier votre microphone.</p>';
                 return;
             }
             
@@ -628,7 +638,6 @@ async function startRecording(isAutomatic = false) {
             const audioElement = document.createElement('audio');
             audioElement.src = audioUrl;
             audioElement.controls = true;
-            audioElement.style.width = '100%';
             
             // Nettoyer le conteneur et ajouter le nouvel élément audio
             audioPlayerContainerEl.innerHTML = '';
@@ -636,31 +645,21 @@ async function startRecording(isAutomatic = false) {
             
             // Analyser l'enregistrement
             analyzeRecording(audioBlob);
-            
-            // AJOUT: Réinitialiser l'interface utilisateur
-            recordBtn.disabled = false;
-            startBtn.disabled = false;
         });
         
-        // Démarrer l'enregistrement avec un timeslice pour s'assurer que dataavailable est déclenché
+        // Démarrer l'enregistrement
         mediaRecorder.start(1000); // Déclencher dataavailable toutes les secondes
-        
-        console.log('Enregistrement démarré avec format:', mimeType);
-        
-        // Marquer l'enregistrement comme en cours
         isRecording = true;
         
-        // Mettre à jour les boutons (sauf si c'est un enregistrement automatique)
-        if (!isAutomatic) {
-            recordBtn.textContent = "Arrêter";
-            startBtn.disabled = true;
-        }
+        console.log('Enregistrement démarré avec format:', mimeType);
         
     } catch (error) {
         console.error('Erreur lors de l\'accès au microphone:', error);
         alert('Impossible d\'accéder au microphone: ' + error.message + '. Veuillez vérifier les autorisations et que votre microphone est connecté.');
         
-        // Réactiver les boutons en cas d'erreur
+        // Réinitialiser l'interface en cas d'erreur
+        recordBtn.textContent = "Enregistrer";
+        recordBtn.classList.remove('recording');
         recordBtn.disabled = false;
         startBtn.disabled = false;
         isRecording = false;
@@ -670,12 +669,14 @@ async function startRecording(isAutomatic = false) {
 // Arrêter l'enregistrement
 function stopRecording() {
     console.log('Tentative d\'arrêt de l\'enregistrement...');
-    console.log('État du mediaRecorder:', mediaRecorder ? mediaRecorder.state : 'non défini');
     
-    // CHANGEMENT: Vérification plus robuste
-    if (!mediaRecorder) {
-        console.error('Aucun enregistreur disponible');
-        // Réinitialiser l'interface quand même
+    // Vérifier si l'enregistrement est en cours
+    if (!isRecording || !mediaRecorder) {
+        console.log('Aucun enregistrement en cours');
+        
+        // Réinitialiser l'interface
+        recordBtn.textContent = "Enregistrer";
+        recordBtn.classList.remove('recording');
         recordBtn.disabled = false;
         startBtn.disabled = false;
         isRecording = false;
@@ -684,14 +685,12 @@ function stopRecording() {
     
     try {
         // N'arrêter que si l'enregistreur est actif
-        if (mediaRecorder.state !== 'inactive') {
+        if (mediaRecorder.state === 'recording') {
             mediaRecorder.stop();
             console.log('MediaRecorder.stop() appelé');
-        } else {
-            console.warn('Enregistreur déjà inactif');
         }
         
-        // Arrêter les pistes du flux audio dans tous les cas
+        // Arrêter les pistes du flux audio
         if (audioStream) {
             audioStream.getTracks().forEach(track => {
                 track.stop();
@@ -702,7 +701,9 @@ function stopRecording() {
     } catch (error) {
         console.error('Erreur lors de l\'arrêt de l\'enregistrement:', error);
         
-        // En cas d'erreur, réinitialiser l'état de l'interface
+        // Réinitialiser l'interface en cas d'erreur
+        recordBtn.textContent = "Enregistrer";
+        recordBtn.classList.remove('recording');
         recordBtn.disabled = false;
         startBtn.disabled = false;
         isRecording = false;
@@ -716,7 +717,7 @@ function stopRecording() {
             }
         }
     }
-} // Ajout de l'accolade fermante manquante ici
+}
 
 // Fonction pour analyser l'enregistrement audio
 async function analyzeRecording(audioBlob) {
@@ -725,34 +726,33 @@ async function analyzeRecording(audioBlob) {
     
     try {
         // Créer un nouvel audioContext pour l'analyse
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyzeContext = new (window.AudioContext || window.webkitAudioContext)();
         
         // Convertir le blob en ArrayBuffer
         const arrayBuffer = await audioBlob.arrayBuffer();
         
         // Décoder le fichier audio
-        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const audioBuffer = await analyzeContext.decodeAudioData(arrayBuffer);
         
         // Extraire les données audio
         const audioData = audioBuffer.getChannelData(0);
         const sampleRate = audioBuffer.sampleRate;
         
         // Calculer la fréquence fondamentale moyenne avec autocorrélation
-        const { frequency, clarity } = calculatePitch(audioData, sampleRate);
+        const { frequency, clarity } = soundAnalyzer.calculatePitch(audioData, sampleRate);
+        
+        // Vérifier si une fréquence a été détectée
+        if (frequency <= 0) {
+            pitchAnalysisEl.innerHTML = '<p>Aucune note détectée dans l\'enregistrement. Essayez de parler plus fort et de tenir la note plus longtemps.</p>';
+            return;
+        }
         
         // Trouver la note la plus proche
         const detectedNote = findClosestNote(frequency);
         
-        // Calculer la différence en cents
+        // Calculer la différence en cents avec la note cible
         const centsDiff = calculateCents(frequency, currentNote.frequency);
         const absCentsDiff = Math.abs(centsDiff);
-        
-        // Trouver la note enregistrée et calculer sa différence
-        const recordedNote = {
-            name: detectedNote.name,
-            frequency: frequency,
-            notation: detectedNote.notation
-        };
         
         // Mettre à jour la notation musicale avec la note de l'utilisateur
         drawMusicNotation(currentNote, frequency);
@@ -781,7 +781,7 @@ async function analyzeRecording(audioBlob) {
                 <h3>Résultats de l'analyse</h3>
                 <p><strong>Voyelle prononcée:</strong> ${currentVowel}</p>
                 <p><strong>Note cible:</strong> ${currentNote.name} (${Math.round(currentNote.frequency)} Hz)</p>
-                <p><strong>Votre note:</strong> ${recordedNote.name} (${Math.round(frequency)} Hz)</p>
+                <p><strong>Votre note:</strong> ${detectedNote.name} (${Math.round(frequency)} Hz)</p>
                 <p><strong>Différence:</strong> ${Math.abs(centsDiff.toFixed(0))} cents 
                     ${centsDiff > 0 ? 'au-dessus' : 'en dessous'}</p>
                 <p><strong>Clarté de la note:</strong> ${Math.round(clarity * 100)}%</p>
@@ -789,179 +789,8 @@ async function analyzeRecording(audioBlob) {
             </div>
         `;
         
-        // Appliquer des styles pour la classe d'évaluation
-        const style = document.createElement('style');
-        style.textContent = `
-            .analysis-result {
-                border-radius: var(--border-radius);
-                padding: 15px;
-                margin-top: 10px;
-            }
-            .excellent {
-                background-color: #e8f5e9;
-                border-left: 5px solid #4caf50;
-            }
-            .good {
-                background-color: #f1f8e9;
-                border-left: 5px solid #8bc34a;
-            }
-            .acceptable {
-                background-color: #fff8e1;
-                border-left: 5px solid #ffc107;
-            }
-            .needs-improvement {
-                background-color: #ffebee;
-                border-left: 5px solid #f44336;
-            }
-            .feedback {
-                font-weight: bold;
-                margin-top: 10px;
-            }
-        `;
-        document.head.appendChild(style);
-        
     } catch (error) {
         console.error('Erreur lors de l\'analyse de l\'enregistrement:', error);
         pitchAnalysisEl.innerHTML = `<p>Erreur lors de l'analyse: ${error.message}</p>`;
     }
 }
-
-// Fonction pour calculer la fréquence fondamentale avec autocorrélation
-function calculatePitch(audioData, sampleRate) {
-    // Utiliser seulement un segment de données pour l'analyse
-    // Ignorer le début et la fin qui peuvent contenir des transitoires
-    const startSample = Math.floor(audioData.length * 0.2); // Ignorer les premiers 20%
-    const endSample = Math.floor(audioData.length * 0.8);   // Ignorer les derniers 20%
-    const segmentLength = endSample - startSample;
-    
-    // Taille de la fenêtre pour l'autocorrélation
-    const windowSize = Math.min(4096, segmentLength);
-    
-    // Collecter des mesures de fréquence pour plusieurs fenêtres
-    const frequencies = [];
-    const clarities = [];
-    
-    // Nombre de fenêtres à analyser
-    const numWindows = Math.min(10, Math.floor(segmentLength / (windowSize / 2)));
-    
-    for (let i = 0; i < numWindows; i++) {
-        const windowStart = startSample + Math.floor(i * (segmentLength - windowSize) / (numWindows - 1));
-        const windowData = audioData.slice(windowStart, windowStart + windowSize);
-        
-        // Appliquer une fenêtre de Hann pour réduire les artefacts
-        for (let j = 0; j < windowSize; j++) {
-            windowData[j] *= 0.5 * (1 - Math.cos(2 * Math.PI * j / (windowSize - 1)));
-        }
-        
-        // Autocorrélation
-        const correlation = new Float32Array(windowSize);
-        let sumSquares = 0;
-        
-        // Calculer l'énergie du signal
-        for (let j = 0; j < windowSize; j++) {
-            sumSquares += windowData[j] * windowData[j];
-        }
-        
-        if (sumSquares <= 0) continue; // Éviter la division par zéro
-        
-        // Calculer l'autocorrélation normalisée
-        for (let lag = 0; lag < windowSize; lag++) {
-            let sum = 0;
-            for (let j = 0; j < windowSize - lag; j++) {
-                sum += windowData[j] * windowData[j + lag];
-            }
-            correlation[lag] = sum / sumSquares;
-        }
-        
-        // Trouver les pics dans la fonction d'autocorrélation
-        // Ignorer les premiers échantillons (fréquences trop élevées)
-        const minLag = Math.floor(sampleRate / 1000); // Limite à 1000 Hz
-        const maxLag = Math.floor(sampleRate / 80);   // Limite à 80 Hz
-        
-        let maxCorrelation = 0;
-        let bestLag = 0;
-        
-        for (let lag = minLag; lag < maxLag; lag++) {
-            // Vérifier si c'est un pic local
-            if (correlation[lag] > correlation[lag - 1] && 
-                correlation[lag] > correlation[lag + 1] && 
-                correlation[lag] > maxCorrelation) {
-                maxCorrelation = correlation[lag];
-                bestLag = lag;
-            }
-        }
-        
-        // Si un pic valide a été trouvé
-        if (bestLag > 0 && maxCorrelation > 0.3) {
-            // Calcul plus précis avec interpolation parabolique
-            const y1 = correlation[bestLag - 1];
-            const y2 = correlation[bestLag];
-            const y3 = correlation[bestLag + 1];
-            const d = (y3 - y1) / (2 * (2 * y2 - y1 - y3));
-            
-            const refinedLag = bestLag + d;
-            const frequency = sampleRate / refinedLag;
-            
-            // Mesure de la clarté (qualité) de la note
-            const clarity = maxCorrelation;
-            
-            frequencies.push(frequency);
-            clarities.push(clarity);
-        }
-    }
-    
-    // Si aucune fréquence valide n'a été trouvée
-    if (frequencies.length === 0) {
-        return { frequency: 0, clarity: 0 };
-    }
-    
-    // Trier les fréquences et prendre la médiane pour éviter les valeurs aberrantes
-    frequencies.sort((a, b) => a - b);
-    clarities.sort((a, b) => a - b);
-    
-    const medianFrequency = frequencies[Math.floor(frequencies.length / 2)];
-    const medianClarity = clarities[Math.floor(clarities.length / 2)];
-    
-    return { frequency: medianFrequency, clarity: medianClarity };
-}
-
-// Styles CSS pour les résultats d'analyse
-const analysisStyles = `
-.analysis-result {
-    border-radius: var(--border-radius);
-    padding: 15px;
-    margin-top: 10px;
-}
-.excellent {
-    background-color: #e8f5e9;
-    border-left: 5px solid #4caf50;
-}
-.good {
-    background-color: #f1f8e9;
-    border-left: 5px solid #8bc34a;
-}
-.acceptable {
-    background-color: #fff8e1;
-    border-left: 5px solid #ffc107;
-}
-.needs-improvement {
-    background-color: #ffebee;
-    border-left: 5px solid #f44336;
-}
-.feedback {
-    font-weight: bold;
-    margin-top: 10px;
-}
-`;
-
-// Ajouter les styles au document
-function addAnalysisStyles() {
-    const styleElement = document.createElement('style');
-    styleElement.textContent = analysisStyles;
-    document.head.appendChild(styleElement);
-}
-
-// Appeler cette fonction lors de l'initialisation
-document.addEventListener('DOMContentLoaded', () => {
-    addAnalysisStyles();
-});
