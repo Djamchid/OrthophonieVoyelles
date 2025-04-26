@@ -716,6 +716,8 @@ function stopRecording() {
             }
         }
     }
+} // Ajout de l'accolade fermante manquante ici
+
 // Fonction pour analyser l'enregistrement audio
 async function analyzeRecording(audioBlob) {
     console.log('Analyse de l\'enregistrement...');
@@ -963,4 +965,3 @@ function addAnalysisStyles() {
 document.addEventListener('DOMContentLoaded', () => {
     addAnalysisStyles();
 });
-}
