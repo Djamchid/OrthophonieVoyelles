@@ -25,6 +25,7 @@
                     <p>Notes disponibles: <span id="available-notes-count">0</span></p>
                 </div>
             </div>
+            
             <div class="result-display">
                 <div class="vowel-display">
                     <h2>Voyelle:</h2>
@@ -51,22 +52,25 @@
             </div>
             
             <div class="recording-section">
-                <!-- Remplacer l'ancien canvas par les nouveaux éléments d'analyse -->
+                <h2>Analyse en temps réel</h2>
                 <div id="sound-analysis">
-                    <h3>Analyse en temps réel</h3>
                     <div class="analyzer-container">
                         <canvas id="frequency-canvas" width="400" height="200"></canvas>
                         <canvas id="spectrogram-canvas" width="400" height="150"></canvas>
                     </div>
                 </div>
                 
-                <div id="analysis-result">
-                    <h3>Analyse</h3>
-                    <div id="pitch-analysis"></div>
-                </div>
                 <h2>Enregistrement</h2>
                 <button id="record-btn">Enregistrer</button>
                 <div id="audio-player-container"></div>
+                
+                <div id="analysis-result">
+                    <h3>Analyse</h3>
+                    <div id="pitch-analysis">
+                        <!-- Les résultats d'analyse seront affichés ici -->
+                        <p>Enregistrez votre voix pour voir l'analyse.</p>
+                    </div>
+                </div>
             </div>
         </div>
         
